@@ -19,6 +19,7 @@ import {
   relationKey,
 } from './state.js';
 import { declareWar, findWar } from './war.js';
+import { t, tNation } from '../i18n/index.js';
 
 /** How provocative each order is, 0 (harmless) to 5 (open hostilities). */
 export const ESCALATION_LEVELS = {
@@ -44,14 +45,14 @@ const RESPONSES = [
     level: 1,
     id: 'protest',
     label: 'Diplomatic protest',
-    describe: (a, b) => `${a} summons the ${NATIONS_BY_ID_ADJ(b)} ambassador and lodges a formal protest.`,
+    describe: (a, b) => t('consequence.protest', '{a} summons the {b} ambassador and lodges a formal protest.', { a, b }),
     apply: () => ({ relation: -5, self: { approval: 1 } }),
   },
   {
     level: 2,
     id: 'expulsions',
     label: 'Expulsions and counter-measures',
-    describe: (a, b) => `${a} expels ${NATIONS_BY_ID_ADJ(b)} diplomats and freezes the files that were still moving.`,
+    describe: (a, b) => t('consequence.expulsions', '{a} expels {b} diplomats and freezes the files that were still moving.', { a, b }),
     apply: (rng) => ({
       relation: -rng.float(8, 14),
       target: { influence: -rng.float(0.5, 2) },
@@ -62,7 +63,7 @@ const RESPONSES = [
     level: 2,
     id: 'counter-sanctions',
     label: 'Counter-sanctions',
-    describe: (a, b) => `${a} answers in kind: ${NATIONS_BY_ID_ADJ(b)} firms lose market access and banking lines.`,
+    describe: (a, b) => t('consequence.counter-sanctions', '{a} answers in kind: {b} firms lose market access and banking lines.', { a, b }),
     apply: (rng) => ({
       relation: -rng.float(9, 16),
       targetModifier: { label: 'Counter-sanctions', turns: 5, growth: -rng.float(0.12, 0.3) },
@@ -73,7 +74,7 @@ const RESPONSES = [
     level: 3,
     id: 'posturing',
     label: 'Military signalling',
-    describe: (a, b) => `${a} surges patrols and moves formations toward the ${NATIONS_BY_ID_ADJ(b)} frontier.`,
+    describe: (a, b) => t('consequence.posturing', '{a} surges patrols and moves formations toward the {b} frontier.', { a, b }),
     apply: (rng) => ({
       self: { readiness: rng.float(2, 5) },
       target: { readiness: rng.float(0.5, 2) },
@@ -85,7 +86,7 @@ const RESPONSES = [
     level: 3,
     id: 'proxy',
     label: 'Proxy pressure',
-    describe: (a, b) => `${a} quietly resumes shipments to everyone with a grievance against ${b}.`,
+    describe: (a, b) => t('consequence.proxy', '{a} quietly resumes shipments to everyone with a grievance against {b}.', { a, b }),
     apply: (rng) => ({
       target: { unrest: rng.float(2, 5), stability: -rng.float(1, 3) },
       relation: -rng.float(6, 12),
@@ -96,7 +97,7 @@ const RESPONSES = [
     level: 4,
     id: 'covert-reprisal',
     label: 'Covert reprisal',
-    describe: (a, b) => `${a} answers below the threshold: ${NATIONS_BY_ID_ADJ(b)} infrastructure starts failing in ways nobody will claim.`,
+    describe: (a, b) => t('consequence.covert-reprisal', '{a} answers below the threshold: {b} infrastructure starts failing in ways nobody will claim.', { a, b }),
     apply: (rng) => ({
       target: { stability: -rng.float(2, 5), readiness: -rng.float(2, 5), unrest: rng.float(2, 6) },
       targetModifier: { label: 'Sabotage and intrusions', turns: 4, growth: -rng.float(0.15, 0.35) },
@@ -108,7 +109,7 @@ const RESPONSES = [
     level: 5,
     id: 'mobilisation',
     label: 'General mobilisation',
-    describe: (a, b) => `${a} orders general mobilisation. Reservists are recalled and the ${NATIONS_BY_ID_ADJ(b)} embassy starts burning paper.`,
+    describe: (a, b) => t('consequence.mobilisation', '{a} orders general mobilisation. Reservists are recalled and the {b} embassy starts burning paper.', { a, b }),
     apply: (rng) => ({
       self: { readiness: rng.float(5, 10), unrest: rng.float(1, 4) },
       relation: -rng.float(16, 26),
@@ -116,13 +117,6 @@ const RESPONSES = [
     }),
   },
 ];
-
-function NATIONS_BY_ID_ADJ(name) {
-  // The describe() helpers are handed display names; this keeps the phrasing
-  // grammatical without threading ids through every template.
-  const match = Object.values(NATIONS_BY_ID).find((n) => n.name === name);
-  return match ? match.adjective : name;
-}
 
 export function ladderKey(a, b) {
   return relationKey(a, b);
@@ -211,7 +205,7 @@ export function resolveConsequences(game, rng, mods, outcome) {
       level: response.level,
       responseId: response.id,
       label: response.label,
-      text: response.describe(NATIONS_BY_ID[victim].name, NATIONS_BY_ID[provoker].name),
+      text: response.describe(tNation(NATIONS_BY_ID[victim]), tNation(NATIONS_BY_ID[provoker])),
       changes: applied.changes,
       involvesPlayer: victim === game.playerId || provoker === game.playerId,
     });
@@ -247,7 +241,10 @@ export function resolveConsequences(game, rng, mods, outcome) {
           level: 5,
           responseId: 'war',
           label: 'Hostilities',
-          text: `The exchange runs out of rungs: ${NATIONS_BY_ID[aggressor].name} opens hostilities against ${NATIONS_BY_ID[other].name}.`,
+          text: t('consequence.war', 'The exchange runs out of rungs: {a} opens hostilities against {b}.', {
+            a: tNation(NATIONS_BY_ID[aggressor]),
+            b: tNation(NATIONS_BY_ID[other]),
+          }),
           changes: [],
           involvesPlayer: aggressor === game.playerId || other === game.playerId,
         });
@@ -304,7 +301,11 @@ function alliedPileOn(game, rng, responderId, againstId, level) {
     level: Math.max(1, level - 1),
     responseId: 'allied-pressure',
     label: 'Allied pressure',
-    text: `${NATIONS_BY_ID[joiner].name} lines up behind ${NATIONS_BY_ID[responderId].name} and applies its own measures against ${NATIONS_BY_ID[againstId].name}.`,
+    text: t('consequence.allied-pressure', '{joiner} lines up behind {friend} and applies its own measures against {target}.', {
+      joiner: tNation(NATIONS_BY_ID[joiner]),
+      friend: tNation(NATIONS_BY_ID[responderId]),
+      target: tNation(NATIONS_BY_ID[againstId]),
+    }),
     changes: applied.changes,
     involvesPlayer: joiner === game.playerId || againstId === game.playerId,
   });
@@ -334,7 +335,8 @@ export function domesticBlowback(game, rng, mods, outcome) {
     level,
     responseId: 'domestic-blowback',
     label: 'Domestic blowback',
-    text: `${outcome.actionName} draws strikes and stoppages at home. The unions found the one lever your government still cares about.`,
+    text: t('consequence.blowback', '{action} draws strikes and stoppages at home. The unions found the one lever your government still cares about.',
+      { action: outcome.actionName }),
     changes: applied.changes,
     involvesPlayer: true,
   };

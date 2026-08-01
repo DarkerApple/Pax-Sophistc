@@ -1,6 +1,6 @@
 # Pax Sophistc
 
-An AI-narrated geopolitical strategy game set in the world as it is now. Pick any of
+An AI-narrated geopolitical strategy game set in the world as it is now. **English and Korean (한국어).** Pick any of
 **56 real countries**, choose the **world you want to play in**, set a **difficulty from 1 to
 10**, and run its foreign, economic and domestic policy quarter by quarter from Q1 2026 onward.
 
@@ -10,7 +10,7 @@ writes the briefings and judges your freeform orders — and every provider it s
 
 ```bash
 npm start          # http://localhost:5173
-npm test           # 68 engine, AI-boundary, world-mode and map tests
+npm test           # 82 engine, AI-boundary, world-mode, map and translation tests
 ```
 
 There is nothing to install. `npm start` runs a ~60-line static file server from
@@ -25,9 +25,17 @@ Each turn is one **quarter**. You get a budget (a share of GDP), some **politica
 and up to **four orders**. Then the other 55 countries take their turn, the world throws
 events at you, wars grind forward, and the books get balanced.
 
-- **34 orders** across Economy, Military, Diplomacy, Domestic, Intelligence and Technology —
-  from `Fiscal Stimulus` and `Semiconductor Self-Sufficiency` to `Covert Destabilisation`
-  and `Military Intervention`.
+- **51 orders** across Quick, Economy, Military, Diplomacy, Domestic, Intelligence and
+  Technology — from `Fiscal Stimulus` and `Semiconductor Self-Sufficiency` to
+  `Covert Destabilisation` and `Military Intervention`. Six of them are one-capital
+  **Quick orders** for turns where you want to keep the budget for something else.
+- **A War Room** that only appears while you are fighting: major offensives, holding
+  actions, mobilisation, strikes on logistics, a total war economy. These move the front,
+  the exhaustion and the casualty count directly, not just your national statistics.
+- **Two budgets, and a credit line.** Orders are paid from cash plus borrowing headroom
+  scaled to your GDP and institutional credibility. A deficit costs interest and unrest;
+  at the ceiling an emergency programme imposes the adjustment for you. It is never a
+  position with no legal move.
 - **Freeform orders.** Type anything ("quietly buy up the lithium offtake contracts before
   Beijing does") and your advisers price it, set the odds, and tell you the risk. This is
   the one place the language model touches the rules — and everything it returns is clamped
@@ -101,6 +109,22 @@ One value, 1–10, retunes the whole simulation rather than scaling a single num
 It also decides how much a good run is worth: the final score is multiplied by ×0.85 at
 Détente and ×1.15 at Doomsday.
 
+## Escalation
+
+Provocative orders — sanctions, cyber operations, forward deployments, covert
+destabilisation — climb a shared escalation ladder with the country you aim them at, and
+the ladder decides how hard the world answers back.
+
+Low on the ladder a sanction draws a protest note. High on it, the same sanction sets off
+counter-sanctions, an allied boycott, a covert reprisal and a general mobilisation in the
+same quarter — because the ladder controls how many links the chain runs for, how high the
+rungs go, and whether their friends join in. Past the last rung, somebody stops writing
+notes.
+
+Ladders taper near the top and cool over about seven quiet quarters, so the top of the
+scale has to be held rather than parked on. The sidebar shows every ladder you are
+standing on.
+
 ## The map
 
 A schematic world map — coarse continent silhouettes with every country plotted at its true
@@ -158,6 +182,26 @@ not just the body copy.
 **Keyboard:** `Enter` ends the quarter · `1`–`6` switch order category · `+` `−` `0` zoom the
 map · `?` opens help · `Esc` closes whatever is open.
 
+## Language
+
+The whole interface ships in **English and Korean**, switchable in Setup or Settings and
+remembered between runs. That covers the chrome, all 56 country names and one-line briefs,
+all 51 order names and descriptions, the world modes, difficulty tiers, themes, help,
+events, decisions, escalation and war text — and the locally generated quarterly briefing,
+which is composed from translated fragments rather than translated after the fact.
+
+When an AI provider is configured, the prompts carry the player's language, so the model
+writes its briefings, adjudications and adviser replies in Korean too. The world state it
+is given stays English for precision.
+
+Typography is **Jua** for headings and large figures and **Gowun Dodum** for body text —
+both self-hosted under `assets/fonts/`, both covering Hangul and Latin, so nothing is
+fetched at runtime.
+
+Adding a third language means one file: copy `src/i18n/ko.js`, translate the values, and
+register it in `src/i18n/index.js`. Anything left untranslated falls back to English rather
+than showing a raw key.
+
 ## Free AI providers
 
 Pick one in Setup or Settings, paste a key, press **Test connection**. All of these have a
@@ -175,9 +219,15 @@ free tier that is enough to play with:
 
 **Offline mode is a first-class option, not a degraded one.** With no provider configured,
 briefings are written by a local generator (`src/ai/offline.js`) that reads the same
-mechanical turn report the model would. You lose prose variety and the advisers panel;
-you lose no gameplay. The game also falls back to it automatically — mid-run, without
-interrupting you — if your provider rate-limits, errors, or goes down.
+mechanical turn report the model would — and it is specific rather than atmospheric: what
+moved growth and by how much, what each order actually changed, and the chain of
+consequences it set off. Freeform orders are matched against the catalogue by intent, with
+country detection and ambition scaling, so "quietly buy up the lithium offtake contracts in
+Chile" is priced as a small targeted trade agreement rather than as a generic initiative.
+
+You lose prose variety and the advisers panel; you lose no gameplay. The game also falls
+back to it automatically — mid-run, without interrupting you — if your provider
+rate-limits, errors, or goes down.
 
 ### About your API key
 
@@ -227,6 +277,8 @@ can reload later or on another machine.
 ```
 index.html            shell
 styles/main.css       one stylesheet: theme tokens, then components
+styles/fonts.css      self-hosted Jua + Gowun Dodum (SIL OFL 1.1)
+assets/fonts/         the font subsets those two faces need
 scripts/serve.js      dev server, zero dependencies
 src/
   data/
@@ -236,6 +288,8 @@ src/
     rng.js            seeded, serialisable RNG
     difficulty.js     the slider → every knob in the simulation
     worldmodes.js     Stable / Current / Chaotic, composed with difficulty
+    consequences.js   escalation ladders and chain reactions
+    finance.js        borrowing, interest, and the emergency programme
     state.js          game construction, relations, serialisation
     actions.js        the 34-order catalogue
     effects.js        the shared "something happened to a country" vocabulary
@@ -251,6 +305,9 @@ src/
     schema.js         the clamp layer between the model and the rules
     narrator.js       AI-first with automatic local fallback
     offline.js        the local briefing generator
+  i18n/
+    index.js          the translation layer, English-fallback by design
+    ko.js             the Korean language pack
   ui/
     theme.js          the theme + text-size registry
     map.js            projection, zoom/pan camera, view modes, legends

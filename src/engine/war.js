@@ -4,6 +4,7 @@
 // outright). Exhaustion is what actually stops most wars.
 
 import { NATIONS_BY_ID } from '../data/nations.js';
+import { t, tNation } from '../i18n/index.js';
 import {
   addModifier,
   adjustRelation,
@@ -36,7 +37,7 @@ export function declareWar(game, attackerId, defenderId, { rng, reason = 'unspec
 
   const war = {
     id: `war-${game.turn}-${attackerId}-${defenderId}`,
-    name: `${attacker.adjective}–${defender.adjective} War`,
+    name: t('war.name', '{a}–{b} War', { a: tNation(attacker, 'adjective'), b: tNation(defender, 'adjective') }),
     attackers: [attackerId],
     defenders: [defenderId],
     startTurn: game.turn,
@@ -167,13 +168,13 @@ export function tickWars(game, rng, mods) {
 
 function frontLineSummary(war) {
   const s = war.warScore;
-  const attacker = NATIONS_BY_ID[war.attackers[0]].adjective;
-  const defender = NATIONS_BY_ID[war.defenders[0]].adjective;
-  if (s > 40) return `${attacker} forces are advancing on every axis; ${defender} lines are buckling.`;
-  if (s > 15) return `${attacker} forces hold the initiative but are paying for every kilometre.`;
-  if (s > -15) return `The front has not meaningfully moved. Both sides are grinding.`;
-  if (s > -40) return `${defender} counter-attacks have taken back ground; the offensive has stalled.`;
-  return `The ${attacker} offensive has collapsed. ${defender} forces are pushing into held territory.`;
+  const a = tNation(NATIONS_BY_ID[war.attackers[0]]);
+  const b = tNation(NATIONS_BY_ID[war.defenders[0]]);
+  if (s > 40) return t('war.rout', '{a} forces are advancing on every axis; {b} lines are buckling.', { a, b });
+  if (s > 15) return t('war.advance', '{a} forces hold the initiative but are paying for every kilometre.', { a, b });
+  if (s > -15) return t('war.stalemate', 'The front has not meaningfully moved. Both sides are grinding.', { a, b });
+  if (s > -40) return t('war.stalled', '{b} counter-attacks have taken back ground; the offensive has stalled.', { a, b });
+  return t('war.collapse', 'The {a} offensive has collapsed. {b} forces are pushing into held territory.', { a, b });
 }
 
 function nuclearEscalationRisk(game, war, mods) {
@@ -305,12 +306,14 @@ export function concludeWar(game, war, rng, kind = 'decisive') {
 
   game.worldTension = clamp(game.worldTension - 12, 0, 100);
 
+  const quarters = game.turn - war.startTurn;
   const summary =
     kind === 'nuclear'
-      ? `${war.name} ends in nuclear catastrophe.`
+      ? t('war.endNuclear', '{war} ends in nuclear catastrophe.', { war: war.name })
       : winners.length
-        ? `${war.name} ends: ${NATIONS_BY_ID[winners[0]].name} prevails after ${game.turn - war.startTurn} quarters and roughly ${(war.casualties / 1000).toFixed(0)}k casualties.`
-        : `${war.name} ends in exhausted stalemate after ${game.turn - war.startTurn} quarters.`;
+        ? t('war.endVictory', '{war} ends: {winner} prevails after {quarters} quarters and roughly {casualties}k casualties.',
+            { war: war.name, winner: tNation(NATIONS_BY_ID[winners[0]]), quarters, casualties: (war.casualties / 1000).toFixed(0) })
+        : t('war.endStalemate', '{war} ends in exhausted stalemate after {quarters} quarters.', { war: war.name, quarters });
 
   logEvent(game, { type: 'war', severity: 'major', text: summary, nations: [...war.attackers, ...war.defenders] });
   return { type: 'war-end', warId: war.id, title: 'War Ends', text: summary, outcome: war.outcome };

@@ -42,6 +42,7 @@ export function loadPrefs() {
     lastWorldMode: 'current',
     theme: 'situation',
     uiScale: 'normal',
+    language: 'en',
     seenHelp: false,
     ...readJson(PREFS_KEY, {}),
   };

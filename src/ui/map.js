@@ -13,6 +13,7 @@
 import { LANDMASSES, OCEANS } from '../data/geography.js';
 import { NATIONS_BY_ID } from '../data/nations.js';
 import { getRelation, livePower } from '../engine/state.js';
+import { t, tNation } from '../i18n/index.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const W = 1000;
@@ -41,9 +42,9 @@ export const MAP_FOCUSES = [
 ];
 
 const ALIGNMENTS = [
-  { id: 'west', name: 'Western-aligned', blocs: ['nato', 'eu', 'usAllied'], slot: 1 },
-  { id: 'east', name: 'Eastern-aligned', blocs: ['brics', 'sco', 'csto'], slot: 2 },
-  { id: 'regional', name: 'Regional bloc', blocs: ['gcc', 'asean', 'au'], slot: 3 },
+  { id: 'west', name: 'Western-aligned', labelKey: 'legend.west', blocs: ['nato', 'eu', 'usAllied'], slot: 1 },
+  { id: 'east', name: 'Eastern-aligned', labelKey: 'legend.east', blocs: ['brics', 'sco', 'csto'], slot: 2 },
+  { id: 'regional', name: 'Regional bloc', labelKey: 'legend.regional', blocs: ['gcc', 'asean', 'au'], slot: 3 },
 ];
 
 export function project(lat, lon) {
@@ -325,7 +326,7 @@ export class WorldMap {
       transform: `translate(${x},${y})`,
       tabindex: '0',
       role: 'button',
-      'aria-label': `${def.name}. ${describeFor(game, id, this.mode)}`,
+      'aria-label': `${tNation(def)}. ${describeFor(game, id, this.mode)}`,
     });
     g.dataset.nation = id;
     g.dataset.baseRadius = String(baseRadius);
@@ -372,7 +373,7 @@ export class WorldMap {
     text.dataset.labelFor = id;
     text.dataset.baseRadius = dataset.baseRadius;
     text.dataset.major = dataset.major;
-    text.textContent = def.name;
+    text.textContent = tNation(def);
     return text;
   }
 
@@ -556,31 +557,31 @@ export function legendFor(mode) {
     case 'power':
     case 'stability':
       return [
-        { label: 'Low', fill: 'var(--dv-seq-1)' },
+        { label: t('legend.low', 'Low'), fill: 'var(--dv-seq-1)' },
         { label: '', fill: 'var(--dv-seq-2)' },
         { label: '', fill: 'var(--dv-seq-3)' },
         { label: '', fill: 'var(--dv-seq-4)' },
-        { label: 'High', fill: 'var(--dv-seq-5)' },
+        { label: t('legend.high', 'High'), fill: 'var(--dv-seq-5)' },
       ];
     case 'blocs':
       return [
-        ...ALIGNMENTS.map((a) => ({ label: a.name, fill: `var(--dv-cat-${a.slot})` })),
-        { label: 'Non-aligned', fill: 'var(--dv-neutral)' },
+        ...ALIGNMENTS.map((a) => ({ label: t(a.labelKey, a.name), fill: `var(--dv-cat-${a.slot})` })),
+        { label: t('legend.nonAligned', 'Non-aligned'), fill: 'var(--dv-neutral)' },
       ];
     case 'conflict':
       return [
-        { label: 'At war', fill: 'var(--st-critical)', shape: 'ring' },
-        { label: 'Hostile', fill: 'var(--st-serious)' },
-        { label: 'Cool', fill: 'var(--st-warning)' },
-        { label: 'No friction', fill: 'var(--dv-neutral)' },
+        { label: t('legend.atWar', 'At war'), fill: 'var(--st-critical)', shape: 'ring' },
+        { label: t('legend.hostile', 'Hostile'), fill: 'var(--st-serious)' },
+        { label: t('legend.cool', 'Cool'), fill: 'var(--st-warning)' },
+        { label: t('legend.noFriction', 'No friction'), fill: 'var(--dv-neutral)' },
       ];
     default:
       return [
-        { label: 'Allied', fill: 'var(--dv-positive)' },
-        { label: 'Friendly', fill: 'var(--dv-positive)', opacity: 0.55 },
-        { label: 'Neutral', fill: 'var(--dv-neutral)' },
-        { label: 'Cool', fill: 'var(--dv-negative)', opacity: 0.55 },
-        { label: 'Hostile', fill: 'var(--dv-negative)' },
+        { label: t('legend.allied', 'Allied'), fill: 'var(--dv-positive)' },
+        { label: t('legend.friendly', 'Friendly'), fill: 'var(--dv-positive)', opacity: 0.55 },
+        { label: t('legend.neutral', 'Neutral'), fill: 'var(--dv-neutral)' },
+        { label: t('legend.cool', 'Cool'), fill: 'var(--dv-negative)', opacity: 0.55 },
+        { label: t('legend.hostile', 'Hostile'), fill: 'var(--dv-negative)' },
       ];
   }
 }

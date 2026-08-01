@@ -16,6 +16,7 @@ import { availableFunds, creditLimit, debtOf, describeFinances } from '../engine
 import { gameModifiers } from '../engine/worldmodes.js';
 import { h, money, mount, relationColour, relationLabel, statColour } from './dom.js';
 import { MAP_FOCUSES, VIEW_MODES, WorldMap, alignmentOf, legendFor } from './map.js';
+import { t, tAction, tLabel, tModifier, tNation } from '../i18n/index.js';
 
 const STAT_ROWS = [
   { key: 'stability', label: 'Stability', hint: 'How well your institutions hold. At zero your government falls.' },
@@ -25,12 +26,18 @@ const STAT_ROWS = [
   { key: 'readiness', label: 'Readiness', hint: 'How much of that force you could actually use this quarter.' },
   { key: 'tech', label: 'Technology', hint: 'Research and industrial sophistication. Raises growth and success odds.' },
   { key: 'influence', label: 'Influence', hint: 'Diplomatic reach. Makes diplomacy and mediation work.' },
-];
+].map((row) => ({
+  ...row,
+  labelOf: () => t(`stat.${row.key}`, row.label),
+  hintOf: () => t(`stat.${row.key}Hint`, row.hint),
+}));
 
 const STAT_LABELS = {
   military: 'Military', readiness: 'Readiness', tech: 'Tech', stability: 'Stability',
   influence: 'Influence', unrest: 'Unrest', approval: 'Approval', nukes: 'Warheads',
 };
+
+const statLabel = (key) => t(`stat.${key}`, STAT_LABELS[key]);
 
 export class GameScreen {
   constructor(root, app) {
@@ -136,26 +143,27 @@ export class GameScreen {
       h('div.topbar__identity',
         h('span.topbar__flag', def.flag),
         h('div',
-          h('div.topbar__country', def.name),
-          h('div.topbar__role', `${def.leaderTitle} · ${mods.mode.name} · ${mods.tier.name} ${game.difficulty}/10`),
+          h('div.topbar__country', tNation(def)),
+          h('div.topbar__role',
+            `${tNation(def, 'leaderTitle')} · ${tLabel('modes', mods.mode.id, mods.mode.name)} · ${tLabel('tiers', mods.tier.name, mods.tier.name)} ${game.difficulty}/10`),
         ),
       ),
       h('div.topbar__metrics',
-        metric('Date', dateLabel(game), `Quarter ${game.turn} of ${game.totalTurns}`),
+        metric(t('hud.date', 'Date'), dateLabel(game), t('hud.dateHint', 'Quarter {turn} of {total}', { turn: game.turn, total: game.totalTurns })),
         state.treasury >= 0
-          ? metric('Treasury', money(state.treasury), 'Cash in hand. You can also borrow against your credit line.')
-          : metric('Debt', money(-state.treasury), `${describeFinances(state).label}. ${describeFinances(state).detail}`, 'var(--bad)'),
-        metric('Can spend', money(availableFunds(state)), 'Cash plus your remaining credit line'),
-        metric('Political capital', `${game.politicalCapital}`, 'Every order costs some. It refills each quarter.'),
-        metric('GDP', `$${state.gdp.toFixed(2)}T`, 'Your economy, annualised'),
-        metric('World tension', `${Math.round(game.worldTension)}`, 'How close the world is to a general crisis', statColour(game.worldTension, true)),
-        metric('Standing', `${score.total} (${score.grade})`, 'Your run graded as it stands right now'),
+          ? metric(t('hud.treasury', 'Treasury'), money(state.treasury), t('hud.treasuryHint', 'Cash in hand. You can also borrow against your credit line.'))
+          : metric(t('hud.debt', 'Debt'), money(-state.treasury), `${describeFinances(state).label}. ${describeFinances(state).detail}`, 'var(--bad)'),
+        metric(t('hud.canSpend', 'Can spend'), money(availableFunds(state)), t('hud.spendHint', 'Cash plus your remaining credit line')),
+        metric(t('hud.politicalCapital', 'Political capital'), `${game.politicalCapital}`, t('hud.pcHint', 'Every order costs some. It refills each quarter.')),
+        metric(t('hud.gdp', 'GDP'), `$${state.gdp.toFixed(2)}T`, t('hud.gdpHint', 'Your economy, annualised')),
+        metric(t('hud.worldTension', 'World tension'), `${Math.round(game.worldTension)}`, t('hud.tensionHint', 'How close the world is to a general crisis'), statColour(game.worldTension, true)),
+        metric(t('hud.standing', 'Standing'), `${score.total} (${score.grade})`, t('hud.standingHint', 'Your run graded as it stands right now')),
       ),
       h('div.topbar__actions',
-        h('button.btn.btn--ghost.btn--sm', { onclick: () => { this.helpOpen = true; this.render(); }, title: 'How to play (?)' }, 'How to play'),
-        h('button.btn.btn--ghost.btn--sm', { onclick: () => this.app.openSettings() }, 'Settings'),
-        h('button.btn.btn--ghost.btn--sm', { onclick: () => this.app.saveNow() }, 'Save'),
-        h('button.btn.btn--ghost.btn--sm', { onclick: () => this.app.quitToMenu() }, 'Menu'),
+        h('button.btn.btn--ghost.btn--sm', { onclick: () => { this.helpOpen = true; this.render(); }, title: 'How to play (?)' }, t('hud.howToPlay', 'How to play')),
+        h('button.btn.btn--ghost.btn--sm', { onclick: () => this.app.openSettings() }, t('hud.settings', 'Settings')),
+        h('button.btn.btn--ghost.btn--sm', { onclick: () => this.app.saveNow() }, t('hud.save', 'Save')),
+        h('button.btn.btn--ghost.btn--sm', { onclick: () => this.app.quitToMenu() }, t('hud.menu', 'Menu')),
       ),
     );
   }
@@ -168,14 +176,14 @@ export class GameScreen {
     const previous = state.history?.[state.history.length - 2];
 
     return h('section.panel',
-      h('h2.panel__title', 'The state of the nation'),
+      h('h2.panel__title', t('panel.nation', 'The state of the nation')),
       h('div.stats', STAT_ROWS.map((row) => this.#statBar(row, state[row.key], previous))),
       state.modifiers.length
         ? h('div.modifiers',
-            h('h3.subhead', 'In effect'),
+            h('h3.subhead', t('panel.inEffect', 'In effect')),
             state.modifiers.slice(0, 8).map((m) =>
               h('div.modifier', { class: (m.growth || 0) < 0 ? 'modifier is-bad' : 'modifier' },
-                h('span', m.label),
+                h('span', tModifier(m.label)),
                 h('span.modifier__turns', `${m.turnsLeft}q`),
               ),
             ),
@@ -183,7 +191,7 @@ export class GameScreen {
         : null,
       wars.length
         ? h('div.wars',
-            h('h3.subhead', 'At war'),
+            h('h3.subhead', t('panel.atWar', 'At war')),
             wars.map((war) => {
               const attacking = war.attackers.includes(this.game.playerId);
               const yourScore = attacking ? war.warScore : -war.warScore;
@@ -198,8 +206,8 @@ export class GameScreen {
                   }),
                 ),
                 h('div.war__meta',
-                  `${yourScore > 0 ? 'You are advancing' : yourScore < 0 ? 'You are losing ground' : 'Deadlocked'} · `,
-                  `${(war.casualties / 1000).toFixed(0)}k casualties`,
+                  `${yourScore > 0 ? t('war.advancing', 'You are advancing') : yourScore < 0 ? t('war.losing', 'You are losing ground') : t('war.deadlocked', 'Deadlocked')} · `,
+                  t('war.casualties', '{n}k casualties', { n: (war.casualties / 1000).toFixed(0) }),
                 ),
               );
             }),
@@ -211,9 +219,9 @@ export class GameScreen {
   #statBar(row, value, previous) {
     const v = Math.round(value);
     const delta = previous && row.key in previous ? v - Math.round(previous[row.key]) : 0;
-    return h('div.stat', { title: row.hint },
+    return h('div.stat', { title: row.hintOf() },
       h('div.stat__head',
-        h('span.stat__label', row.label),
+        h('span.stat__label', row.labelOf()),
         h('span',
           h('span.stat__value', String(v)),
           delta ? h('span.stat__delta', { class: `stat__delta stat__delta--${delta > 0 ? 'up' : 'down'}` },
@@ -230,9 +238,9 @@ export class GameScreen {
   #inspector() {
     return h('section.panel.inspector',
       h('div.panel__titlebar',
-        h('h2.panel__title', 'Country inspector'),
+        h('h2.panel__title', t('panel.inspector', 'Country inspector')),
         this.pinnedId
-          ? h('button.btn.btn--tiny.btn--ghost', { onclick: () => { this.pinnedId = null; this.map?.setSelected(null); this.#refreshInspector(); } }, 'Unpin')
+          ? h('button.btn.btn--tiny.btn--ghost', { onclick: () => { this.pinnedId = null; this.map?.setSelected(null); this.#refreshInspector(); } }, t('inspector.unpin', 'Unpin'))
           : null,
       ),
       h('div', { dataset: { inspector: 'true' } }, this.#inspectorBody()),
@@ -243,7 +251,7 @@ export class GameScreen {
     const id = this.inspectId;
     if (!id || !this.game.nations[id]) {
       return h('p.inspector__hint',
-        'Hover or tap any country on the map to see it here. Tap again to open its full file.');
+        t('inspector.hint', 'Hover or tap any country on the map to see it here. Tap again to open its full file.'));
     }
 
     const game = this.game;
@@ -255,35 +263,36 @@ export class GameScreen {
     const atWar = game.wars.some((w) => w.active && (w.attackers.includes(id) || w.defenders.includes(id)));
 
     return h('div',
-      this.pinnedId === id ? h('div.inspector__pin', 'Pinned') : null,
+      this.pinnedId === id ? h('div.inspector__pin', t('inspector.pinned', 'Pinned')) : null,
       h('div.inspector__head',
         h('span.inspector__flag', def.flag),
         h('div',
-          h('div.inspector__name', def.name),
-          h('div.inspector__sub', `${def.government} · #${rank} of ${Object.keys(game.nations).length}`),
+          h('div.inspector__name', tNation(def)),
+          h('div.inspector__sub', `${tNation(def, 'government')} · #${rank} / ${Object.keys(game.nations).length}`),
         ),
       ),
       isPlayer
-        ? h('div.inspector__relation', { style: { color: 'var(--accent)' } }, 'Your country')
+        ? h('div.inspector__relation', { style: { color: 'var(--accent)' } }, t('inspector.yourCountry', 'Your country'))
         : h('div.inspector__relation', { style: { color: relationColour(relation) } },
             `${relationLabel(relation)} · relation ${Math.round(relation)}`),
-      atWar ? h('div.inspector__relation', { style: { color: 'var(--st-critical)' } }, '⚔ At war') : null,
-      h('p.inspector__brief', def.brief),
+      atWar ? h('div.inspector__relation', { style: { color: 'var(--st-critical)' } }, t('inspector.atWar', '⚔ At war')) : null,
+      h('p.inspector__brief', tNation(def, 'brief')),
       h('div.inspector__grid',
-        row('GDP', `$${state.gdp.toFixed(2)}T`),
-        row('People', `${Math.round(state.population)}M`),
-        row('Military', Math.round(state.military)),
-        row('Readiness', Math.round(state.readiness)),
-        row('Technology', Math.round(state.tech)),
-        row('Stability', Math.round(state.stability)),
-        row('Unrest', Math.round(state.unrest)),
-        row('Influence', Math.round(state.influence)),
-        row('Warheads', state.nukes || '—'),
-        row('Alignment', alignmentOf(id)?.name.replace('-aligned', '') || 'Non-aligned'),
+        row(t('stat.gdp', 'GDP'), `$${state.gdp.toFixed(2)}T`),
+        row(t('stat.people', 'People'), `${Math.round(state.population)}M`),
+        row(t('stat.military', 'Military'), Math.round(state.military)),
+        row(t('stat.readiness', 'Readiness'), Math.round(state.readiness)),
+        row(t('stat.tech', 'Technology'), Math.round(state.tech)),
+        row(t('stat.stability', 'Stability'), Math.round(state.stability)),
+        row(t('stat.unrest', 'Unrest'), Math.round(state.unrest)),
+        row(t('stat.influence', 'Influence'), Math.round(state.influence)),
+        row(t('stat.nukes', 'Warheads'), state.nukes || '—'),
+        row(t('stat.alignment', 'Alignment'),
+          alignmentOf(id) ? t(alignmentOf(id).labelKey, alignmentOf(id).name) : t('legend.nonAligned', 'Non-aligned')),
       ),
       h('div.inspector__actions',
-        h('button.btn.btn--sm.btn--ghost', { onclick: () => { this.map?.centreOn(id, Math.max(3, this.map.zoom)); } }, 'Zoom to'),
-        isPlayer ? null : h('button.btn.btn--sm', { onclick: () => this.#openDetail(id) }, 'Open full file'),
+        h('button.btn.btn--sm.btn--ghost', { onclick: () => { this.map?.centreOn(id, Math.max(3, this.map.zoom)); } }, t('inspector.zoomTo', 'Zoom to')),
+        isPlayer ? null : h('button.btn.btn--sm', { onclick: () => this.#openDetail(id) }, t('inspector.openFile', 'Open full file')),
       ),
     );
 
@@ -298,15 +307,15 @@ export class GameScreen {
     if (!ladders.length) return null;
 
     return h('section.panel',
-      h('h2.panel__title', 'Escalation'),
+      h('h2.panel__title', t('panel.escalation', 'Escalation')),
       h('p.panel__note',
-        'The higher a ladder climbs, the harder and the longer the answer comes back.'),
+        t('panel.escalationNote', 'The higher a ladder climbs, the harder and the longer the answer comes back.')),
       ladders.slice(0, 5).map((l) => {
         const def = NATIONS_BY_ID[l.id];
         return h('div.ladder', { onpointerenter: () => this.#onMapHover(l.id), onpointerleave: () => this.#onMapHover(null) },
           h('div.ladder__head',
-            h('span', `${def.flag} ${def.name}`),
-            h('span.ladder__band', { class: `ladder__band is-${l.band}` }, l.label),
+            h('span', `${def.flag} ${tNation(def)}`),
+            h('span.ladder__band', { class: `ladder__band is-${l.band}` }, t(`ladder.${l.band}`, l.label)),
           ),
           h('div.stat__track',
             h('div.stat__fill', {
@@ -323,17 +332,23 @@ export class GameScreen {
     );
   }
 
+  /** Objective wording, with the country name substituted in. */
+  #objectiveDetail(obj) {
+    const nation = tNation(NATIONS_BY_ID[this.game.playerId]);
+    return t(`objective.${obj.id}.detail`, obj.detail, { nation });
+  }
+
   #objectives() {
     const score = scoreRun(this.game);
     return h('section.panel',
-      h('h2.panel__title', 'Your mandate'),
+      h('h2.panel__title', t('panel.mandate', 'Your mandate')),
       h('ul.objectives',
         score.objectives.map((obj) =>
           h('li.objective', { class: obj.met ? 'objective is-met' : 'objective' },
             h('span.objective__mark', obj.met ? '✓' : '○'),
             h('div',
-              h('div.objective__title', obj.title),
-              h('div.objective__detail', obj.detail),
+              h('div.objective__title', t(`objective.${obj.id}.title`, obj.title)),
+              h('div.objective__detail', this.#objectiveDetail(obj)),
             ),
           ),
         ),
@@ -358,16 +373,16 @@ export class GameScreen {
         onpointerleave: () => this.#onMapHover(null),
       },
         h('span.relation__flag', def.flag),
-        h('span.relation__name', def.name),
+        h('span.relation__name', tNation(def)),
         h('span.relation__value', { style: { color: relationColour(entry.rel) } }, relationLabel(entry.rel)),
       );
     };
 
     return h('section.panel',
-      h('h2.panel__title', 'Relations'),
-      h('h3.subhead', 'Closest'),
+      h('h2.panel__title', t('panel.relations', 'Relations')),
+      h('h3.subhead', t('panel.closest', 'Closest')),
       friends.map(row),
-      h('h3.subhead', 'Most hostile'),
+      h('h3.subhead', t('panel.mostHostile', 'Most hostile')),
       foes.map(row),
     );
   }
@@ -379,11 +394,11 @@ export class GameScreen {
 
     return h('section.panel.panel--map',
       h('div.panel__titlebar',
-        h('h2.panel__title', 'Situation map'),
+        h('h2.panel__title', t('map.title', 'Situation map')),
         this.pendingTargetAction
           ? h('span.targeting',
-              `Pick a target for ${this.pendingTargetAction.name}`,
-              h('button.btn.btn--tiny', { onclick: () => { this.pendingTargetAction = null; this.render(); } }, 'Cancel'),
+              t('map.pickTarget', 'Pick a target for {action}', { action: tAction(this.pendingTargetAction) }),
+              h('button.btn.btn--tiny', { onclick: () => { this.pendingTargetAction = null; this.render(); } }, t('common.cancel', 'Cancel')),
             )
           : null,
       ),
@@ -393,9 +408,9 @@ export class GameScreen {
           VIEW_MODES.map((m) =>
             h('button.chip', {
               class: this.mapMode === m.id ? 'chip is-active' : 'chip',
-              title: m.hint,
+              title: t(`view.${m.id}Hint`, m.hint),
               onclick: () => { this.mapMode = m.id; this.map?.setMode(m.id); this.render(); },
-            }, m.name),
+            }, t(`view.${m.id}`, m.name)),
           ),
         ),
         h('div.map-toolbar__spacer'),
@@ -404,14 +419,14 @@ export class GameScreen {
           'aria-label': 'Jump to region',
           onchange: (e) => { this.map?.focusOn(e.target.value); e.target.selectedIndex = 0; },
         },
-          h('option', { value: '' }, 'Jump to…'),
-          MAP_FOCUSES.map((f) => h('option', { value: f.id }, f.name)),
+          h('option', { value: '' }, t('map.jumpTo', 'Jump to…')),
+          MAP_FOCUSES.map((f) => h('option', { value: f.id }, t(`focus.${f.id}`, f.name))),
         ),
         h('div.map-zoom',
-          h('button.map-zoom__btn', { onclick: () => this.map?.zoomBy(1 / 1.4), 'aria-label': 'Zoom out', title: 'Zoom out (−)' }, '−'),
+          h('button.map-zoom__btn', { onclick: () => this.map?.zoomBy(1 / 1.4), 'aria-label': t('map.zoomOut', 'Zoom out'), title: `${t('map.zoomOut', 'Zoom out')} (−)` }, '−'),
           h('span.map-zoom__level', { dataset: { zoomLevel: 'true' } }, '1.0×'),
-          h('button.map-zoom__btn', { onclick: () => this.map?.zoomBy(1.4), 'aria-label': 'Zoom in', title: 'Zoom in (+)' }, '+'),
-          h('button.map-zoom__btn', { onclick: () => this.map?.resetCamera(), 'aria-label': 'Reset view', title: 'Reset view (0)' }, '⤢'),
+          h('button.map-zoom__btn', { onclick: () => this.map?.zoomBy(1.4), 'aria-label': t('map.zoomIn', 'Zoom in'), title: `${t('map.zoomIn', 'Zoom in')} (+)` }, '+'),
+          h('button.map-zoom__btn', { onclick: () => this.map?.resetCamera(), 'aria-label': t('map.reset', 'Reset view'), title: `${t('map.reset', 'Reset view')} (0)` }, '⤢'),
         ),
       ),
 
@@ -427,14 +442,19 @@ export class GameScreen {
             item.label,
           ),
         ),
-        h('span.map-legend__hint', 'Scroll or drag to explore · ', mode.hint),
+        h('span.map-legend__hint', t('map.explore', 'Scroll or drag to explore · '), t(`view.${mode.id}Hint`, mode.hint)),
       ),
     );
   }
 
   #feed() {
     const briefing = this.app.briefing;
-    const tabs = [['briefing', 'Briefing'], ['dispatches', 'Dispatches'], ['advisor', 'Advisers'], ['log', 'Archive']];
+    const tabs = [
+      ['briefing', t('feed.briefing', 'Briefing')],
+      ['dispatches', t('feed.dispatches', 'Dispatches')],
+      ['advisor', t('feed.advisers', 'Advisers')],
+      ['log', t('feed.archive', 'Archive')],
+    ];
 
     return h('section.panel.panel--feed',
       h('div.tabs',
@@ -445,10 +465,10 @@ export class GameScreen {
           }, label),
         ),
         briefing?.source === 'offline' && briefing?.degraded
-          ? h('span.badge.badge--warn', { title: briefing.degraded }, 'AI unavailable — local briefing')
+          ? h('span.badge.badge--warn', { title: briefing.degraded }, t('feed.aiUnavailable', 'AI unavailable — local briefing'))
           : briefing?.source === 'offline'
-            ? h('span.badge', 'Local briefing')
-            : h('span.badge.badge--ai', 'AI briefing'),
+            ? h('span.badge', t('feed.localBriefing', 'Local briefing'))
+            : h('span.badge.badge--ai', t('feed.aiBriefing', 'AI briefing')),
       ),
       h('div.feed', this.#feedBody(briefing)),
     );
@@ -458,7 +478,7 @@ export class GameScreen {
     if (this.busy) {
       return h('div.feed__loading',
         h('div.spinner'),
-        h('p', this.app.narrator.usingAi ? 'The wires are coming in…' : 'Resolving the quarter…'),
+        h('p', this.app.narrator.usingAi ? t('feed.loadingAi', 'The wires are coming in…') : t('feed.loadingLocal', 'Resolving the quarter…')),
       );
     }
     if (!briefing) return h('p.empty', 'No briefing yet.');
@@ -467,7 +487,7 @@ export class GameScreen {
       return briefing.dispatches?.length
         ? briefing.dispatches.map((d) =>
             h('article.dispatch', h('div.dispatch__source', d.source), h('p.dispatch__text', d.text)))
-        : h('p.empty', 'The wires are quiet this quarter.');
+        : h('p.empty', t('feed.quietWires', 'The wires are quiet this quarter.'));
     }
 
     if (this.feedTab === 'advisor') return this.#advisorPanel();
@@ -479,14 +499,14 @@ export class GameScreen {
             h('div.logline', { class: `logline logline--${e.severity}` },
               h('span.logline__date', e.date),
               h('span.logline__text', e.text)))
-        : h('p.empty', 'Nothing archived yet.');
+        : h('p.empty', t('feed.nothingArchived', 'Nothing archived yet.'));
     }
 
     return h('article.briefing',
       h('h3.briefing__headline', briefing.headline),
       (briefing.briefing || []).map((p) => h('p', p)),
       briefing.advisorNote
-        ? h('blockquote.advice', h('span.advice__label', 'Chief of staff'), briefing.advisorNote)
+        ? h('blockquote.advice', h('span.advice__label', t('feed.chiefOfStaff', 'Chief of staff')), briefing.advisorNote)
         : null,
       briefing.outlook ? h('p.outlook', briefing.outlook) : null,
     );
@@ -496,13 +516,12 @@ export class GameScreen {
     return h('div.advisor',
       this.app.narrator.usingAi
         ? null
-        : h('p.panel__note.panel__note--warn',
-            'Advisers need a language model. Add a free provider key in Settings to consult them.'),
+        : h('p.panel__note.panel__note--warn', t('feed.adviserNeedsAi', 'Advisers need a language model. Add a free provider key in Settings to consult them.')),
       h('div.advisor__log',
         this.advisorLog.length
           ? this.advisorLog.map((entry) =>
               h('div.advisor__entry', h('p.advisor__q', entry.question), h('p.advisor__a', entry.answer)))
-          : h('p.empty', 'Ask your national security adviser anything about the current position.'),
+          : h('p.empty', t('feed.askAdviser', 'Ask your national security adviser anything about the current position.')),
         this.advisorBusy ? h('div.spinner') : null,
       ),
       h('form.advisor__form', {
@@ -515,10 +534,10 @@ export class GameScreen {
       },
         h('input.input', {
           type: 'text',
-          placeholder: 'Should we sanction them, or wait?',
+          placeholder: t('feed.adviserPlaceholder', 'Should we sanction them, or wait?'),
           disabled: !this.app.narrator.usingAi || this.advisorBusy,
         }),
-        h('button.btn.btn--sm', { type: 'submit', disabled: !this.app.narrator.usingAi || this.advisorBusy }, 'Ask'),
+        h('button.btn.btn--sm', { type: 'submit', disabled: !this.app.narrator.usingAi || this.advisorBusy }, t('feed.ask', 'Ask')),
       ),
     );
   }
@@ -553,13 +572,13 @@ export class GameScreen {
 
     return h('section.panel.panel--planner',
       h('div.panel__titlebar',
-        h('h2.panel__title', 'Orders for the quarter'),
-        h('span.badge', `${this.orders.length} of 4`),
+        h('h2.panel__title', t('orders.title', 'Orders for the quarter')),
+        h('span.badge', t('orders.count', '{n} of 4', { n: this.orders.length })),
       ),
 
       h('div.budget',
         h('div.budget__row',
-          h('span', 'Money committed'),
+          h('span', t('orders.committed', 'Money committed')),
           h('span', { class: spend > funds ? 'is-over' : '' }, `${money(spend)} of ${money(funds)}`),
         ),
         h('div.budget__track',
@@ -571,13 +590,13 @@ export class GameScreen {
           }),
         ),
         h('div.budget__row',
-          h('span', debtOf(state) ? `Debt · ${finances.label}` : 'Credit line'),
+          h('span', debtOf(state) ? `${t('hud.debt', 'Debt')} · ${finances.label}` : t('orders.creditLine', 'Credit line')),
           h('span', debtOf(state)
-            ? `${money(debtOf(state))} owed`
-            : `${money(creditLimit(state))} available`),
+            ? t('orders.owed', '{amount} owed', { amount: money(debtOf(state)) })
+            : t('orders.available', '{amount} available', { amount: money(creditLimit(state)) })),
         ),
         h('div.budget__row',
-          h('span', 'Political capital'),
+          h('span', t('hud.politicalCapital', 'Political capital')),
           h('span', { class: pcSpend > game.politicalCapital ? 'is-over' : '' }, `${pcSpend} of ${game.politicalCapital}`),
         ),
       ),
@@ -600,14 +619,14 @@ export class GameScreen {
               ),
             ),
           )
-        : h('p.empty.empty--tight', 'Nothing queued yet. Pick up to four orders below, then end the quarter.'),
+        : h('p.empty.empty--tight', t('orders.empty', 'Nothing queued yet. Pick up to four orders below, then end the quarter.')),
 
       h('div.chips.chips--tight',
         categories.map((c) =>
           h('button.chip', {
             class: `chip${this.category === c.id ? ' is-active' : ''}${c.wartimeOnly ? ' chip--war' : ''}`,
             onclick: () => { this.category = c.id; this.render(); },
-          }, `${c.icon} ${c.name}`),
+          }, `${c.icon} ${tLabel('categories', c.id, c.name)}`),
         ),
       ),
 
@@ -649,12 +668,12 @@ export class GameScreen {
     const remainingPc = game.politicalCapital - this.orders.reduce((s, o) => s + o.pc, 0);
     const blocked = queued || cost > remainingMoney || action.pc > remainingPc;
     const why = queued
-      ? 'Four orders is the limit for one quarter'
+      ? t('orders.limitReached', 'Four orders is the limit for one quarter')
       : cost > remainingMoney
-        ? `Needs ${money(cost - remainingMoney)} more`
+        ? t('orders.needMore', 'Needs {amount} more', { amount: money(cost - remainingMoney) })
         : action.pc > remainingPc
-          ? `Needs ${action.pc - remainingPc} more political capital`
-          : action.blurb;
+          ? t('orders.needMorePc', 'Needs {n} more political capital', { n: action.pc - remainingPc })
+          : tAction(action, 'blurb');
 
     return h('button.action', {
       class: `action${blocked ? ' is-blocked' : ''}${recommended && !blocked ? ' is-recommended' : ''}`,
@@ -663,20 +682,20 @@ export class GameScreen {
       onclick: () => this.#queueAction(action),
     },
       h('div.action__head',
-        h('span.action__name', action.name),
-        h('span.action__chance', { title: 'Chance this order succeeds' }, `${Math.round(chance * 100)}%`),
+        h('span.action__name', tAction(action)),
+        h('span.action__chance', { title: t('orders.successHint', 'Chance this order succeeds') }, `${Math.round(chance * 100)}%`),
       ),
-      h('p.action__blurb', action.blurb),
+      h('p.action__blurb', tAction(action, 'blurb')),
       h('div.action__effects', describeEffects(action).map((e) =>
         h('span.effect-pill', { class: `effect-pill effect-pill--${e.dir}` }, e.text))),
       h('div.action__meta',
         h('span', money(cost)),
         h('span', `${action.pc} PC`),
-        cost > state.treasury && !blocked ? h('span.action__tag.action__tag--risk', 'on credit') : null,
-        recommended ? h('span.action__tag.action__tag--rec', 'suggested') : null,
-        action.target === 'nation' ? h('span.action__tag', 'pick a target') : null,
-        action.risk === 'high' ? h('span.action__tag.action__tag--risk', 'can backfire') : null,
-        action.declaresWar ? h('span.action__tag.action__tag--war', 'starts a war') : null,
+        cost > state.treasury && !blocked ? h('span.action__tag.action__tag--risk', t('orders.onCredit', 'on credit')) : null,
+        recommended ? h('span.action__tag.action__tag--rec', t('orders.suggested', 'suggested')) : null,
+        action.target === 'nation' ? h('span.action__tag', t('orders.needTarget', 'pick a target')) : null,
+        action.risk === 'high' ? h('span.action__tag.action__tag--risk', t('orders.canBackfire', 'can backfire')) : null,
+        action.declaresWar ? h('span.action__tag.action__tag--war', t('orders.startsWar', 'starts a war')) : null,
       ),
     );
   }
@@ -684,7 +703,7 @@ export class GameScreen {
   #queueAction(action, targetId = null) {
     if (action.target === 'nation' && !targetId) {
       this.pendingTargetAction = action;
-      this.app.toast(`Now click a country on the map to target ${action.name}.`);
+      this.app.toast(t('orders.pickTargetToast', 'Now click a country on the map to target {action}.', { action: tAction(action) }));
       this.render();
       return;
     }
@@ -695,8 +714,9 @@ export class GameScreen {
       return;
     }
     if (action.confirm) {
-      const label = targetId ? ` against ${NATIONS_BY_ID[targetId].name}` : '';
-      if (!window.confirm(`${action.name}${label}. This is not reversible. Proceed?`)) return;
+      const label = targetId ? ` — ${tNation(NATIONS_BY_ID[targetId])}` : '';
+      if (!window.confirm(t('toast.irreversible', '{action}{target}. This is not reversible. Proceed?',
+        { action: tAction(action), target: label }))) return;
     }
 
     this.orders.push({
@@ -727,7 +747,7 @@ export class GameScreen {
     }
     if (this.pendingTargetAction) {
       if (id === this.game.playerId) {
-        this.app.toast('You cannot target your own country.');
+        this.app.toast(t('toast.selfTarget', 'You cannot target your own country.'));
         return;
       }
       this.#queueAction(this.pendingTargetAction, id);
@@ -747,23 +767,23 @@ export class GameScreen {
 
   #customOrder() {
     return h('div.custom',
-      h('h3.subhead', 'Freeform order'),
+      h('h3.subhead', t('orders.freeform', 'Freeform order')),
       h('p.panel__note',
         this.app.narrator.usingAi
-          ? 'Write anything at all. Your advisers will price it and give you the odds.'
-          : 'Without an AI provider this is priced generically. Add a free key in Settings for real adjudication.',
+          ? t('orders.freeformAi', 'Write anything at all. Your advisers will price it and give you the odds.')
+          : t('orders.freeformLocal', 'Your advisers read the text and price it against the closest instrument. Add a free key in Settings for real adjudication.'),
       ),
       h('textarea.input.custom__box', {
         rows: 3,
-        placeholder: 'e.g. Quietly buy up the lithium offtake contracts before Beijing does.',
+        placeholder: t('orders.freeformPlaceholder', 'e.g. Quietly buy up the lithium offtake contracts before Beijing does.'),
         value: this.customDraft,
         oninput: (e) => { this.customDraft = e.target.value; },
       }),
       h('div.row',
         h('button.btn.btn--sm', { disabled: this.customBusy, onclick: () => this.#priceCustom() },
-          this.customBusy ? 'Consulting…' : 'Price this order'),
+          this.customBusy ? t('orders.pricing', 'Consulting…') : t('orders.priceIt', 'Price this order')),
         this.customPriced
-          ? h('button.btn.btn--ghost.btn--sm', { onclick: () => { this.customPriced = null; this.render(); } }, 'Discard')
+          ? h('button.btn.btn--ghost.btn--sm', { onclick: () => { this.customPriced = null; this.render(); } }, t('orders.discard', 'Discard'))
           : null,
       ),
       this.customPriced ? this.#customCard() : null,
@@ -773,7 +793,7 @@ export class GameScreen {
   async #priceCustom() {
     const text = this.customDraft.trim();
     if (!text) {
-      this.app.toast('Write the order first.');
+      this.app.toast(t('toast.writeOrderFirst', 'Write the order first.'));
       return;
     }
     this.customBusy = true;
@@ -787,7 +807,7 @@ export class GameScreen {
     const result = this.customPriced;
     if (!result.feasible) {
       return h('div.custom__result.custom__result--refused',
-        h('strong', 'Your advisers refuse.'),
+        h('strong', t('orders.refused', 'Your advisers refuse.')),
         h('p', result.refusal || 'This cannot be done.'),
       );
     }
@@ -816,7 +836,7 @@ export class GameScreen {
           this.customDraft = '';
           this.render();
         },
-      }, 'Add to orders'),
+      }, t('orders.addToOrders', 'Add to orders')),
     );
   }
 
@@ -840,23 +860,25 @@ export class GameScreen {
     return h('footer.actionbar',
       h('div.actionbar__summary',
         this.orders.length
-          ? `${this.orders.length} order${this.orders.length > 1 ? 's' : ''} · ${money(spend)} · ${pcSpend} political capital`
-          : 'No orders queued — the quarter will pass without direction.',
+          ? t('orders.summary', '{n} orders · {money} · {pc} political capital',
+              { n: this.orders.length, money: money(spend), pc: pcSpend })
+          : t('orders.none', 'No orders queued — the quarter will pass without direction.'),
         idle
           ? h('span.actionbar__warn',
-              ` ${money(spareMoney)} and ${sparePc} political capital still unspent.`)
+              t('orders.unspent', ' {money} and {pc} political capital still unspent.',
+                { money: money(spareMoney), pc: sparePc }))
           : null,
-        undecided ? h('span.actionbar__warn', ' A crisis is awaiting your decision.') : null,
+        undecided ? h('span.actionbar__warn', t('orders.crisisWaiting', ' A crisis is awaiting your decision.')) : null,
       ),
       h('div.row',
         this.orders.length
-          ? h('button.btn.btn--ghost', { onclick: () => { this.orders = []; this.render(); } }, 'Clear orders')
+          ? h('button.btn.btn--ghost', { onclick: () => { this.orders = []; this.render(); } }, t('orders.clear', 'Clear orders'))
           : null,
         h('button.btn.btn--primary.btn--lg', {
           disabled: this.busy || overBudget || game.status !== 'active',
           title: overBudget ? 'You have committed more than you have' : 'End the quarter (Enter)',
           onclick: () => this.app.endTurn(this.orders, this.decisionChoice),
-        }, this.busy ? 'Resolving…' : 'End quarter →'),
+        }, this.busy ? t('orders.resolving', 'Resolving…') : t('orders.endQuarter', 'End quarter →')),
       ),
     );
   }
@@ -867,7 +889,7 @@ export class GameScreen {
     const decision = this.game.pendingDecision;
     return h('div.modal', { role: 'dialog', 'aria-modal': 'true' },
       h('div.modal__panel.modal__panel--decision',
-        h('div.modal__eyebrow', 'Decision required'),
+        h('div.modal__eyebrow', t('decision.required', 'Decision required')),
         h('h2.modal__title', decision.title),
         h('p.modal__body', decision.prompt),
         h('div.choices',
@@ -876,14 +898,14 @@ export class GameScreen {
               h('div.choice__label', choice.label),
               h('div.choice__detail', choice.detail),
               typeof choice.chance === 'number'
-                ? h('div.choice__odds', `${Math.round(choice.chance * 100)}% to land as intended`)
-                : h('div.choice__odds', 'Certain outcome'),
+                ? h('div.choice__odds', t('decision.odds', '{pct}% to land as intended', { pct: Math.round(choice.chance * 100) }))
+                : h('div.choice__odds', t('decision.certain', 'Certain outcome')),
             ),
           ),
         ),
         h('button.btn.btn--ghost.btn--block', {
           onclick: () => { this.decisionChoice = '__defer__'; this.render(); },
-        }, 'Take no decision (accept the consequences)'),
+        }, t('decision.defer', 'Take no decision (accept the consequences)')),
       ),
     );
   }
@@ -895,48 +917,57 @@ export class GameScreen {
     },
       h('div.modal__panel.modal__panel--help',
         h('button.modal__close', { onclick: () => { this.helpOpen = false; this.render(); }, 'aria-label': 'Close' }, '✕'),
-        h('h2.modal__title', 'How to play'),
+        h('h2.modal__title', t('help.title', 'How to play')),
 
         h('div.help__section',
-          h('h3', 'The loop'),
-          h('p', 'Each turn is one quarter — three months. You queue up to four orders, then press ',
-            h('strong', 'End quarter'), '. Everyone else moves, the world throws events at you, and you get a briefing.'),
+          h('h3', t('help.loop', 'The loop')),
+          h('p', { html: t('help.loopBody',
+            'Each turn is one quarter — three months. You queue up to four orders, then press <b>End quarter</b>. Everyone else moves, the world throws events at you, and you get a briefing.') }),
         ),
         h('div.help__section',
-          h('h3', 'Your two budgets'),
+          h('h3', t('help.budgets', 'Your two budgets')),
           h('ul',
-            h('li', h('strong', 'Treasury'), ' — money. It refills from your economy every quarter. Big programmes cost a share of GDP.'),
-            h('li', h('strong', 'Political capital'), ' — how much your government can push through. It refills based on approval and stability, so unpopular governments can do less.'),
+            h('li', { html: t('help.budgetMoney',
+              '<b>Treasury</b> — money. It refills from your economy every quarter, and you can borrow against a credit line when it runs short. Big programmes cost a share of GDP.') }),
+            h('li', { html: t('help.budgetPc',
+              '<b>Political capital</b> — how much your government can push through. It refills based on approval and stability, so unpopular governments can do less.') }),
           ),
         ),
         h('div.help__section',
-          h('h3', 'Picking orders'),
-          h('p', 'The percentage on each card is its chance of succeeding, based on your actual stats. Orders marked ',
-            h('span.action__tag.action__tag--rec', 'suggested'), ' address a problem you currently have. Orders marked ',
-            h('span.action__tag.action__tag--risk', 'can backfire'), ' can end up worse than doing nothing.'),
-          h('p', 'Orders that need a target say so — click the card, then click a country on the map.'),
+          h('h3', t('help.picking', 'Picking orders')),
+          h('p', { html: t('help.pickingBody',
+            'The percentage on each card is its chance of succeeding, based on your actual stats. Orders marked <b>suggested</b> address a problem you currently have; ones marked <b>can backfire</b> can end up worse than doing nothing.') }),
+          h('p', t('help.targets',
+            'Orders that need a target say so — click the card, then click a country on the map.')),
         ),
         h('div.help__section',
-          h('h3', 'The map'),
-          h('p', 'Scroll or pinch to zoom, drag to pan. The buttons above it recolour the world by relations, power, stability, alignment or conflict. Hover any country to fill the inspector on the left; click to pin it, click again for its full file.'),
+          h('h3', t('help.escalation', 'Escalation')),
+          h('p', t('help.escalationBody',
+            'Sanctions, cyber operations and forward deployments climb an escalation ladder with that country. The higher the ladder, the more the answer comes in waves rather than notes, the more their allies join in, and the closer the whole thing gets to a war.')),
         ),
         h('div.help__section',
-          h('h3', 'Winning'),
-          h('p', 'Your mandate is set on day one and graded at the end across the economy, domestic order, standing, security and world stability. If stability hits zero, your government falls and the run is over.'),
+          h('h3', t('help.mapTitle', 'The map')),
+          h('p', t('help.mapBody',
+            'Scroll or pinch to zoom, drag to pan. The buttons above it recolour the world by relations, power, stability, alignment or conflict. Hover any country to fill the inspector on the left; click to pin it, click again for its full file.')),
         ),
         h('div.help__section',
-          h('h3', 'Keyboard'),
+          h('h3', t('help.winning', 'Winning')),
+          h('p', t('help.winningBody',
+            'Your mandate is set on day one and graded at the end across the economy, domestic order, standing, security and world stability. If stability hits zero, your government falls and the run is over.')),
+        ),
+        h('div.help__section',
+          h('h3', t('help.keyboard', 'Keyboard')),
           h('div.help__keys',
-            h('kbd', 'Enter'), h('span', 'End the quarter'),
-            h('kbd', '1–6'), h('span', 'Switch order category'),
-            h('kbd', '+ / −'), h('span', 'Zoom the map'),
-            h('kbd', '0'), h('span', 'Reset the map view'),
-            h('kbd', '?'), h('span', 'Open this help'),
-            h('kbd', 'Esc'), h('span', 'Close whatever is open'),
+            h('kbd', 'Enter'), h('span', t('help.keyEnd', 'End the quarter')),
+            h('kbd', '1–7'), h('span', t('help.keyCategory', 'Switch order category')),
+            h('kbd', '+ / −'), h('span', t('help.keyZoom', 'Zoom the map')),
+            h('kbd', '0'), h('span', t('help.keyReset', 'Reset the map view')),
+            h('kbd', '?'), h('span', t('help.keyHelp', 'Open this help')),
+            h('kbd', 'Esc'), h('span', t('help.keyEsc', 'Close whatever is open')),
           ),
         ),
         h('div.row.row--end',
-          h('button.btn.btn--primary', { onclick: () => { this.helpOpen = false; this.render(); } }, 'Got it'),
+          h('button.btn.btn--primary', { onclick: () => { this.helpOpen = false; this.render(); } }, t('common.gotIt', 'Got it')),
         ),
       ),
     );
@@ -964,39 +995,39 @@ export class GameScreen {
         h('div.detail__head',
           h('span.detail__flag', def.flag),
           h('div',
-            h('h2.modal__title', def.name),
-            h('div.detail__sub', `${def.government} · ${def.leaderTitle} · ${state.population.toFixed(0)}M people`),
+            h('h2.modal__title', tNation(def)),
+            h('div.detail__sub', `${tNation(def, 'government')} · ${tNation(def, 'leaderTitle')} · ${state.population.toFixed(0)}M`),
           ),
         ),
-        h('p.detail__brief', def.brief),
+        h('p.detail__brief', tNation(def, 'brief')),
         isPlayer ? null : h('div.detail__relation', { style: { color: relationColour(relation) } },
           `${relationLabel(relation)} — relation ${Math.round(relation)}`),
         h('div.detail__grid',
-          detailStat('GDP', `$${state.gdp.toFixed(2)}T`),
-          detailStat('Treasury', money(state.treasury)),
-          detailStat('Military', Math.round(state.military)),
-          detailStat('Readiness', Math.round(state.readiness)),
-          detailStat('Technology', Math.round(state.tech)),
-          detailStat('Stability', Math.round(state.stability)),
-          detailStat('Unrest', Math.round(state.unrest)),
-          detailStat('Influence', Math.round(state.influence)),
-          detailStat('Warheads', state.nukes || '—'),
-          detailStat('Power rank', `#${rankedNations(game).findIndex((r) => r.state.id === id) + 1}`),
+          detailStat(t('stat.gdp', 'GDP'), `$${state.gdp.toFixed(2)}T`),
+          detailStat(t('stat.treasury', 'Treasury'), money(state.treasury)),
+          detailStat(t('stat.military', 'Military'), Math.round(state.military)),
+          detailStat(t('stat.readiness', 'Readiness'), Math.round(state.readiness)),
+          detailStat(t('stat.tech', 'Technology'), Math.round(state.tech)),
+          detailStat(t('stat.stability', 'Stability'), Math.round(state.stability)),
+          detailStat(t('stat.unrest', 'Unrest'), Math.round(state.unrest)),
+          detailStat(t('stat.influence', 'Influence'), Math.round(state.influence)),
+          detailStat(t('stat.nukes', 'Warheads'), state.nukes || '—'),
+          detailStat(t('stat.powerRank', 'Power rank'), `#${rankedNations(game).findIndex((r) => r.state.id === id) + 1}`),
         ),
         state.modifiers.length
           ? h('div.modifiers',
-              h('h3.subhead', 'In effect'),
-              state.modifiers.map((m) => h('div.modifier', h('span', m.label), h('span.modifier__turns', `${m.turnsLeft}q`))))
+              h('h3.subhead', t('panel.inEffect', 'In effect')),
+              state.modifiers.map((m) => h('div.modifier', h('span', tModifier(m.label)), h('span.modifier__turns', `${m.turnsLeft}q`))))
           : null,
         isPlayer
           ? null
           : h('div.detail__actions',
-              h('h3.subhead', 'Order against this country'),
+              h('h3.subhead', t('orders.orderAgainst', 'Order against this country')),
               h('div.detail__buttons',
                 ACTIONS.filter((a) => a.target === 'nation' && actionAvailability(game, a, id).ok).map((a) =>
                   h('button.btn.btn--ghost.btn--sm', {
                     onclick: () => { this.#closeDetail(); this.#queueAction(a, id); },
-                  }, a.name),
+                  }, tAction(a)),
                 ),
               ),
             ),
@@ -1018,7 +1049,7 @@ export class GameScreen {
       h('div.modal__panel.modal__panel--end',
         h('div.modal__eyebrow',
           `${NATIONS_BY_ID[game.playerId].name} · ${dateLabel(game)} · `,
-          game.status === 'defeat' ? 'government fallen' : 'term concluded'),
+          game.status === 'defeat' ? t('end.governmentFallen', 'government fallen') : t('end.termConcluded', 'term concluded')),
         h('h2.modal__title', ending.title || 'The run is over'),
         h('p.modal__body', ending.summary || ''),
         h('div.grade',
@@ -1036,16 +1067,16 @@ export class GameScreen {
             ),
           ),
         ),
-        h('h3.subhead', 'Mandate'),
+        h('h3.subhead', t('end.mandate', 'Mandate')),
         h('ul.objectives',
           score.objectives.map((o) =>
             h('li.objective', { class: o.met ? 'objective is-met' : 'objective' },
               h('span.objective__mark', o.met ? '✓' : '✕'),
-              h('div', h('div.objective__title', o.title)))),
+              h('div', h('div.objective__title', t(`objective.${o.id}.title`, o.title))))),
         ),
         h('div.row.row--end',
-          h('button.btn.btn--ghost', { onclick: () => this.app.exportSave() }, 'Export run'),
-          h('button.btn.btn--primary', { onclick: () => this.app.quitToMenu() }, 'New game'),
+          h('button.btn.btn--ghost', { onclick: () => this.app.exportSave() }, t('end.exportRun', 'Export run')),
+          h('button.btn.btn--primary', { onclick: () => this.app.quitToMenu() }, t('end.newGame', 'New game')),
         ),
       ),
     );
@@ -1058,29 +1089,43 @@ export function describeEffects(action) {
   const pills = [];
 
   for (const [key, value] of Object.entries(success.self || {})) {
-    const label = STAT_LABELS[key];
-    if (!label || typeof value !== 'number' || value === 0) continue;
-    pills.push({ text: `${label} ${fmt(value)}`, dir: (key === 'unrest' ? -value : value) > 0 ? 'up' : 'down' });
+    if (!STAT_LABELS[key] || typeof value !== 'number' || value === 0) continue;
+    pills.push({
+      text: `${statLabel(key)} ${fmt(value)}`,
+      dir: (key === 'unrest' ? -value : value) > 0 ? 'up' : 'down',
+    });
   }
   if (success.modifier?.growth) {
     pills.push({
-      text: `Growth ${fmt(success.modifier.growth, 2)}/q for ${success.modifier.turns ?? 4}q`,
+      text: t('effect.growth', 'Growth {n}/q for {turns}q',
+        { n: fmt(success.modifier.growth, 2), turns: success.modifier.turns ?? 4 }),
       dir: success.modifier.growth > 0 ? 'up' : 'down',
     });
   }
   if (typeof success.relation === 'number' && success.relation !== 0) {
-    pills.push({ text: `Their relations ${fmt(success.relation)}`, dir: success.relation > 0 ? 'up' : 'down' });
+    pills.push({
+      text: t('effect.relations', 'Their relations {n}', { n: fmt(success.relation) }),
+      dir: success.relation > 0 ? 'up' : 'down',
+    });
   }
   for (const [key, value] of Object.entries(success.target || {})) {
-    const label = STAT_LABELS[key];
-    if (!label || typeof value !== 'number' || value === 0) continue;
-    pills.push({ text: `Their ${label.toLowerCase()} ${fmt(value)}`, dir: value > 0 ? 'up' : 'down' });
+    if (!STAT_LABELS[key] || typeof value !== 'number' || value === 0) continue;
+    pills.push({
+      text: t('effect.their', 'Their {stat} {n}', { stat: statLabel(key), n: fmt(value) }),
+      dir: value > 0 ? 'up' : 'down',
+    });
   }
   if (typeof success.worldTension === 'number' && success.worldTension !== 0) {
-    pills.push({ text: `World tension ${fmt(success.worldTension)}`, dir: success.worldTension < 0 ? 'up' : 'down' });
+    pills.push({
+      text: t('effect.tension', 'World tension {n}', { n: fmt(success.worldTension) }),
+      dir: success.worldTension < 0 ? 'up' : 'down',
+    });
   }
   if (typeof success.treasuryPctGdp === 'number' && success.treasuryPctGdp !== 0) {
-    pills.push({ text: `Treasury ${fmt(success.treasuryPctGdp, 1)}% GDP`, dir: 'up' });
+    pills.push({
+      text: t('effect.treasury', 'Treasury {n}% GDP', { n: fmt(success.treasuryPctGdp, 1) }),
+      dir: 'up',
+    });
   }
   return pills.slice(0, 5);
 }

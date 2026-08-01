@@ -9,6 +9,7 @@ import { AiClient } from '../ai/client.js';
 import { h, mount } from './dom.js';
 import { THEMES, UI_SCALES, applyTheme, applyUiScale } from './theme.js';
 import { hasSave, loadAiConfig, loadPrefs, saveAiConfig, savePrefs } from './store.js';
+import { LANGUAGES, currentLanguage, setLanguage, t, tIn, tLabel, tNation } from '../i18n/index.js';
 
 export class SetupScreen {
   constructor(root, handlers) {
@@ -22,6 +23,7 @@ export class SetupScreen {
       worldMode: prefs.lastWorldMode,
       theme: prefs.theme,
       uiScale: prefs.uiScale,
+      language: prefs.language,
       seed: '',
       search: '',
       region: 'all',
@@ -38,7 +40,7 @@ export class SetupScreen {
         this.#quickstart(),
         h('div.setup__grid',
           h('section.panel.panel--wide',
-            h('h2.panel__title', 'Choose your country'),
+            h('h2.panel__title', t('setup.chooseCountry', 'Choose your country')),
             this.#countryFilters(),
             this.#countryGrid(),
           ),
@@ -60,34 +62,26 @@ export class SetupScreen {
       h('div.hero__mark', 'PAX'),
       h('div',
         h('h1.hero__title', 'Pax Sophistc'),
-        h('p.hero__sub',
-          'Run any country on earth from 2026 onward. Choose the world you want to play in, ',
-          'set how hard it pushes back, and see how far you get. Runs entirely in your browser; ',
-          'free AI narration optional.',
-        ),
+        h('p.hero__sub', t('app.tagline',
+          'Run any country on earth from 2026 onward. Choose the world you want to play in, set how hard it pushes back, and see how far you get. Runs entirely in your browser; free AI narration optional.')),
       ),
     );
   }
 
   #quickstart() {
     return h('section.panel', { style: { marginBottom: '1.25rem' } },
-      h('h2.panel__title', 'How it works'),
+      h('h2.panel__title', t('setup.howItWorks', 'How it works')),
       h('div.quickstart',
-        h('div.quickstart__step',
-          h('div.quickstart__num', '1'),
-          h('div.quickstart__text', h('strong', 'Pick a country.'), ' Anything from the United States to Cuba. Each one starts from its real 2026 position.'),
-        ),
-        h('div.quickstart__step',
-          h('div.quickstart__num', '2'),
-          h('div.quickstart__text', h('strong', 'Issue up to four orders'), ' each quarter — spend money and political capital on the economy, the army, diplomacy or your own population.'),
-        ),
-        h('div.quickstart__step',
-          h('div.quickstart__num', '3'),
-          h('div.quickstart__text', h('strong', 'The world answers.'), ' Fifty-five other governments move, crises land on your desk, and you get a briefing on what changed.'),
-        ),
-        h('div.quickstart__step',
-          h('div.quickstart__num', '4'),
-          h('div.quickstart__text', h('strong', 'Get graded.'), ' At the end of your term you are scored against the mandate you were handed on day one.'),
+        [
+          ['setup.step1', '<b>Pick a country.</b> Anything from the United States to Cuba. Each one starts from its real 2026 position.'],
+          ['setup.step2', '<b>Issue up to four orders</b> each quarter — spend money and political capital on the economy, the army, diplomacy or your own population.'],
+          ['setup.step3', '<b>The world answers.</b> Fifty-five other governments move, crises land on your desk, and you get a briefing on what changed.'],
+          ['setup.step4', '<b>Get graded.</b> At the end of your term you are scored against the mandate you were handed on day one.'],
+        ].map(([key, fallback], i) =>
+          h('div.quickstart__step',
+            h('div.quickstart__num', String(i + 1)),
+            h('div.quickstart__text', { html: t(key, fallback) }),
+          ),
         ),
       ),
     );
@@ -95,7 +89,7 @@ export class SetupScreen {
 
   #worldModePanel() {
     return h('section.panel',
-      h('h2.panel__title', 'World'),
+      h('h2.panel__title', t('setup.world', 'World')),
       h('div.mode-cards',
         WORLD_MODES.map((mode) =>
           h('button.mode-card', {
@@ -105,10 +99,11 @@ export class SetupScreen {
           },
             h('div.mode-card__head',
               h('span.mode-card__icon', mode.icon),
-              h('span.mode-card__name', mode.name),
+              h('span.mode-card__name', tLabel('modes', mode.id, mode.name)),
             ),
-            h('div.mode-card__blurb', mode.blurb),
-            h('div.mode-card__traits', mode.traits.map((t) => h('span.badge', t))),
+            h('div.mode-card__blurb', tIn('modes', mode.id, 'blurb', mode.blurb)),
+            h('div.mode-card__traits',
+              (tIn('modes', mode.id, 'traits', null) || mode.traits).map((trait) => h('span.badge', trait))),
             this.state.worldMode === mode.id
               ? h('ul.difficulty__list', { style: { marginTop: '0.5rem' } },
                   modePreview(mode.id).map((line) => h('li', line)))
@@ -123,7 +118,7 @@ export class SetupScreen {
     return h('div.filters',
       h('input.input.filters__search', {
         type: 'search',
-        placeholder: 'Search 56 countries…',
+        placeholder: t('setup.search', 'Search 56 countries…'),
         value: this.state.search,
         oninput: (e) => { this.state.search = e.target.value; this.#refreshGrid(); },
       }),
@@ -131,12 +126,12 @@ export class SetupScreen {
         h('button.chip', {
           class: this.state.region === 'all' ? 'chip is-active' : 'chip',
           onclick: () => { this.state.region = 'all'; this.render(); },
-        }, 'All regions'),
+        }, t('setup.allRegions', 'All regions')),
         REGIONS.map((r) =>
           h('button.chip', {
             class: this.state.region === r.id ? 'chip is-active' : 'chip',
             onclick: () => { this.state.region = r.id; this.render(); },
-          }, r.name),
+          }, tLabel('regions', r.id, r.name)),
         ),
       ),
     );
@@ -150,8 +145,10 @@ export class SetupScreen {
       return (
         n.name.toLowerCase().includes(q) ||
         n.adjective.toLowerCase().includes(q) ||
+        // Search the translated name too, so Korean players can type Korean.
+        tNation(n).toLowerCase().includes(q) ||
         n.id.includes(q) ||
-        n.tags.some((t) => t.includes(q))
+        n.tags.some((tag) => tag.includes(q))
       );
     });
   }
@@ -171,19 +168,19 @@ export class SetupScreen {
     const nations = this.#visibleNations();
     mount(grid, nations.length
       ? nations.map((n) => this.#countryCard(n))
-      : h('p.empty', 'No country matches that search.'));
+      : h('p.empty', t('setup.noMatch', 'No country matches that search.')));
   }
 
   #countryCard(nation) {
     const selected = nation.id === this.state.nationId;
     const tier = powerRank(nation);
     const label =
-      tier >= 155 ? 'Superpower'
-      : tier >= 120 ? 'Great power'
-      : tier >= 100 ? 'Major power'
-      : tier >= 84 ? 'Regional power'
-      : tier >= 74 ? 'Middle power'
-      : 'Small power';
+      tier >= 155 ? t('tier.superpower', 'Superpower')
+      : tier >= 120 ? t('tier.great', 'Great power')
+      : tier >= 100 ? t('tier.major', 'Major power')
+      : tier >= 84 ? t('tier.regional', 'Regional power')
+      : tier >= 74 ? t('tier.middle', 'Middle power')
+      : t('tier.small', 'Small power');
 
     const ease = countryEase(nation);
 
@@ -195,18 +192,18 @@ export class SetupScreen {
       h('div.country__head',
         h('span.country__flag', nation.flag),
         h('div',
-          h('div.country__name', nation.name),
-          h('div.country__tier', `${label} · ${nation.government}`),
+          h('div.country__name', tNation(nation)),
+          h('div.country__tier', `${label} · ${tNation(nation, 'government')}`),
         ),
       ),
-      h('p.country__brief', nation.brief),
+      h('p.country__brief', tNation(nation, 'brief')),
       h('div.country__stats',
         h('span.country__ease', { style: { color: ease.colour }, title: ease.hint }, ease.label),
-        stat('GDP', `$${nation.gdp.toFixed(2)}T`),
-        stat('Pop', `${nation.population}M`),
-        stat('Mil', nation.military),
-        stat('Stab', nation.stability),
-        nation.nukes > 0 ? stat('Nukes', nation.nukes) : null,
+        stat(t('stat.gdp', 'GDP'), `$${nation.gdp.toFixed(2)}T`),
+        stat(t('stat.population', 'Pop'), `${nation.population}M`),
+        stat(t('stat.military', 'Mil'), nation.military),
+        stat(t('stat.stability', 'Stab'), nation.stability),
+        nation.nukes > 0 ? stat(t('stat.nukes', 'Nukes'), nation.nukes) : null,
       ),
     );
   }
@@ -214,10 +211,10 @@ export class SetupScreen {
   #difficultyPanel() {
     const mods = difficultyModifiers(this.state.difficulty);
     return h('section.panel',
-      h('h2.panel__title', 'Difficulty'),
+      h('h2.panel__title', t('setup.difficulty', 'Difficulty')),
       h('div.difficulty',
         h('div.difficulty__head',
-          h('span.difficulty__tier', mods.tier.name),
+          h('span.difficulty__tier', tLabel('tiers', mods.tier.name, mods.tier.name)),
           h('span.difficulty__value', `${this.state.difficulty} / ${DIFFICULTY_MAX}`),
         ),
         h('input.slider', {
@@ -228,7 +225,7 @@ export class SetupScreen {
           oninput: (e) => { this.state.difficulty = Number(e.target.value); this.render(); },
         }),
         h('div.slider__scale', h('span', 'Détente'), h('span', 'Contested'), h('span', 'Doomsday')),
-        h('p.difficulty__blurb', mods.tier.blurb),
+        h('p.difficulty__blurb', tIn('tiers', mods.tier.name, 'blurb', mods.tier.blurb)),
         h('ul.difficulty__list', difficultyPreview(this.state.difficulty).map((line) => h('li', line))),
       ),
     );
@@ -236,12 +233,12 @@ export class SetupScreen {
 
   #appearancePanel() {
     return h('section.panel',
-      h('h2.panel__title', 'Appearance'),
+      h('h2.panel__title', t('setup.appearance', 'Appearance')),
       h('div.theme-grid',
         THEMES.map((theme) =>
           h('button.theme-card', {
             class: this.state.theme === theme.id ? 'theme-card is-active' : 'theme-card',
-            title: theme.blurb,
+            title: tIn('themes', theme.id, 'blurb', theme.blurb),
             onclick: () => {
               this.state.theme = theme.id;
               applyTheme(theme.id);
@@ -251,12 +248,28 @@ export class SetupScreen {
           },
             h('div.theme-card__swatches',
               theme.swatch.map((colour) => h('span.theme-card__swatch', { style: { background: colour } }))),
-            h('div.theme-card__name', theme.name),
+            h('div.theme-card__name', tLabel('themes', theme.id, theme.name)),
           ),
         ),
       ),
-      h('label.field', { style: { marginTop: '0.75rem', marginBottom: 0 } },
-        h('span.field__label', 'Text size'),
+      h('label.field', { style: { marginTop: '0.75rem' } },
+        h('span.field__label', t('setup.language', 'Language')),
+        h('div.chips',
+          LANGUAGES.map((lang) =>
+            h('button.chip', {
+              class: currentLanguage() === lang.id ? 'chip is-active' : 'chip',
+              onclick: () => {
+                setLanguage(lang.id);
+                savePrefs({ language: lang.id });
+                this.state.language = lang.id;
+                this.render();
+              },
+            }, lang.native),
+          ),
+        ),
+      ),
+      h('label.field', { style: { marginBottom: 0 } },
+        h('span.field__label', t('setup.textSize', 'Text size')),
         h('div.chips',
           UI_SCALES.map((scale) =>
             h('button.chip', {
@@ -267,7 +280,7 @@ export class SetupScreen {
                 savePrefs({ uiScale: scale.id });
                 this.render();
               },
-            }, scale.name),
+            }, tLabel('scales', scale.id, scale.name)),
           ),
         ),
       ),
@@ -276,23 +289,25 @@ export class SetupScreen {
 
   #rulesPanel() {
     return h('section.panel',
-      h('h2.panel__title', 'Run settings'),
+      h('h2.panel__title', t('setup.runSettings', 'Run settings')),
       h('label.field',
-        h('span.field__label', 'Length of term'),
+        h('span.field__label', t('setup.termLength', 'Length of term')),
         h('select.input', { onchange: (e) => { this.state.totalTurns = Number(e.target.value); } },
-          [[16, '4 years (16 quarters)'], [40, '10 years (40 quarters)'], [80, '20 years (80 quarters)']].map(
+          [[16, t('setup.term16', '4 years (16 quarters)')],
+           [40, t('setup.term40', '10 years (40 quarters)')],
+           [80, t('setup.term80', '20 years (80 quarters)')]].map(
             ([value, label]) => h('option', { value, selected: this.state.totalTurns === value }, label)),
         ),
       ),
       h('label.field',
-        h('span.field__label', 'Seed (optional)'),
+        h('span.field__label', t('setup.seed', 'Seed (optional)')),
         h('input.input', {
           type: 'text',
-          placeholder: 'Leave blank for random',
+          placeholder: t('setup.seedPlaceholder', 'Leave blank for random'),
           value: this.state.seed,
           oninput: (e) => { this.state.seed = e.target.value; },
         }),
-        h('span.field__hint', 'The same seed and the same orders replay the same world.'),
+        h('span.field__hint', t('setup.seedHint', 'The same seed and the same orders replay the same world.')),
       ),
     );
   }
@@ -302,13 +317,11 @@ export class SetupScreen {
     const isOffline = provider.kind === 'none';
 
     return h('section.panel',
-      h('h2.panel__title', 'AI narrator (optional)'),
-      h('p.panel__note',
-        'The game is fully playable without this. A language model writes the briefings, judges ',
-        'freeform orders and answers your advisers. Every option below has a free tier.',
-      ),
+      h('h2.panel__title', t('settings.aiOptional', 'AI narrator (optional)')),
+      h('p.panel__note', t('settings.aiNotice',
+        'The game is fully playable without this. A language model writes the briefings, judges freeform orders and answers your advisers. Every option below has a free tier.')),
       h('label.field',
-        h('span.field__label', 'Provider'),
+        h('span.field__label', t('settings.provider', 'Provider')),
         h('select.input', {
           onchange: (e) => {
             const next = PROVIDERS_BY_ID[e.target.value];
@@ -325,7 +338,7 @@ export class SetupScreen {
       ),
 
       isOffline ? null : h('label.field',
-        h('span.field__label', provider.requiresKey ? 'API key' : 'API key (optional)'),
+        h('span.field__label', provider.requiresKey ? t('settings.apiKey', 'API key') : t('settings.apiKeyOptional', 'API key (optional)')),
         h('input.input', {
           type: 'password', autocomplete: 'off', spellcheck: 'false',
           placeholder: provider.requiresKey ? 'Paste your free API key' : 'Usually blank for local servers',
@@ -333,15 +346,15 @@ export class SetupScreen {
           oninput: (e) => { this.state.ai.apiKey = e.target.value.trim(); this.#persistAi(); },
         }),
         provider.signupUrl
-          ? h('span.field__hint', 'Get one free at ',
+          ? h('span.field__hint', t('settings.getFreeKey', 'Get one free at '),
               h('a', { href: provider.signupUrl, target: '_blank', rel: 'noreferrer noopener' },
                 provider.signupUrl.replace(/^https?:\/\//, '')),
-              '. It is stored in this browser only and sent straight to the provider.')
+              t('settings.keyStorage', '. It is stored in this browser only and sent straight to the provider.'))
           : null,
       ),
 
       isOffline ? null : h('label.field',
-        h('span.field__label', 'Model'),
+        h('span.field__label', t('settings.model', 'Model')),
         h('input.input', {
           type: 'text',
           list: `models-${provider.id}`,
@@ -355,7 +368,7 @@ export class SetupScreen {
 
       provider.id === 'custom'
         ? h('label.field',
-            h('span.field__label', 'Endpoint URL'),
+            h('span.field__label', t('settings.endpoint', 'Endpoint URL')),
             h('input.input', {
               type: 'url',
               placeholder: 'http://localhost:8080/v1/chat/completions',
@@ -366,10 +379,10 @@ export class SetupScreen {
         : null,
 
       isOffline
-        ? h('p.panel__note.panel__note--ok',
-            'Offline mode works: briefings are written by a local generator instead. You can add a key later from Settings.')
+        ? h('p.panel__note.panel__note--ok', t('settings.offlineOk',
+            'Offline mode works: briefings are written by a local generator instead. You can add a key later from Settings.'))
         : h('div.row',
-            h('button.btn.btn--ghost', { onclick: (e) => this.#testConnection(e.currentTarget) }, 'Test connection'),
+            h('button.btn.btn--ghost', { onclick: (e) => this.#testConnection(e.currentTarget) }, t('settings.test', 'Test connection')),
             this.state.testStatus
               ? h('span.status', { class: `status status--${this.state.testStatus.kind}` }, this.state.testStatus.message)
               : null,
@@ -380,7 +393,7 @@ export class SetupScreen {
   async #testConnection(button) {
     button.disabled = true;
     const original = button.textContent;
-    button.textContent = 'Testing…';
+    button.textContent = t('settings.testing', 'Testing…');
     this.state.testStatus = null;
     try {
       const reply = await new AiClient({ ...this.state.ai, enabled: true }).test();
@@ -409,12 +422,12 @@ export class SetupScreen {
           seed: this.state.seed.trim() || null,
           ai: this.state.ai,
         }),
-      }, 'Take office'),
+      }, t('setup.takeOffice', 'Take office')),
       hasSave()
-        ? h('button.btn.btn--ghost.btn--block', { onclick: () => this.handlers.onContinue() }, 'Continue saved run')
+        ? h('button.btn.btn--ghost.btn--block', { onclick: () => this.handlers.onContinue() }, t('setup.continue', 'Continue saved run'))
         : null,
       h('label.btn.btn--ghost.btn--block.btn--file',
-        'Load a save file',
+        t('setup.loadFile', 'Load a save file'),
         h('input', {
           type: 'file', accept: 'application/json,.json',
           onchange: (e) => {
@@ -434,9 +447,9 @@ export function countryEase(nation) {
     (100 - nation.unrest) * 0.25 +
     Math.min(100, Math.log10(Math.max(nation.gdp, 0.01) * 1000) * 22) * 0.25;
 
-  if (score >= 68) return { label: 'Gentle start', colour: 'var(--good)', hint: 'Stable, solvent, few enemies. A good first run.' };
-  if (score >= 54) return { label: 'Moderate', colour: 'var(--warn)', hint: 'Real problems, but room to manoeuvre.' };
-  return { label: 'Hard start', colour: 'var(--bad)', hint: 'Fragile, poor, or surrounded. Expect to struggle.' };
+  if (score >= 68) return { label: t('ease.gentle', 'Gentle start'), colour: 'var(--good)', hint: t('ease.gentleHint', 'Stable, solvent, few enemies. A good first run.') };
+  if (score >= 54) return { label: t('ease.moderate', 'Moderate'), colour: 'var(--warn)', hint: t('ease.moderateHint', 'Real problems, but room to manoeuvre.') };
+  return { label: t('ease.hard', 'Hard start'), colour: 'var(--bad)', hint: t('ease.hardHint', 'Fragile, poor, or surrounded. Expect to struggle.') };
 }
 
 function stat(label, value) {

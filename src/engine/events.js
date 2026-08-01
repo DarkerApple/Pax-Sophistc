@@ -7,6 +7,7 @@
 
 import { NATIONS_BY_ID } from '../data/nations.js';
 import { clamp, getRelation, livePower, rankedNations } from './state.js';
+import { t, tNation } from '../i18n/index.js';
 
 const anyNation = (game, rng, filter = () => true) => {
   const pool = Object.values(game.nations).filter((n) => filter(n, NATIONS_BY_ID[n.id]));
@@ -24,6 +25,7 @@ export const EVENTS = [
     build: (game, rng) => {
       const up = rng.bool(0.55);
       return {
+        textKey: up ? 'event.commodity-shock.up' : 'event.commodity-shock.down',
         text: up
           ? 'Energy and food prices spike on supply disruption. Importers are squeezed; exporters bank the windfall.'
           : 'A demand slump collapses commodity prices. Exporters face budget holes; importers get relief.',
@@ -111,6 +113,7 @@ export const EVENTS = [
     build: (game, rng, nation) => {
       const succeeds = rng.bool(0.4);
       return {
+        textKey: succeeds ? 'event.coup-attempt.succeeds' : 'event.coup-attempt.fails',
         text: succeeds
           ? `Elements of the ${NATIONS_BY_ID[nation.id].adjective} armed forces seize the state broadcaster and the capital. The government falls.`
           : `A coup attempt in ${NATIONS_BY_ID[nation.id].name} collapses within 48 hours. The purges begin immediately.`,
@@ -587,6 +590,15 @@ function weightOf(event, game, rng) {
   return Number.isFinite(w) ? Math.max(0, w) : 0;
 }
 
+/**
+ * Localise one event's text. English uses the already-interpolated sentence the
+ * event built; other languages use a template keyed by event id, with the
+ * countries involved passed in as variables so word order can differ.
+ */
+function eventText(event, built, vars) {
+  return t(built.textKey || `event.${event.id}`, built.text, vars);
+}
+
 function fireEvent(game, rng, mods, event) {
   if (event.kind === 'decision') {
     const built = event.build(game, rng);
@@ -594,10 +606,16 @@ function fireEvent(game, rng, mods, event) {
     return {
       decision: {
         eventId: event.id,
-        title: event.title,
-        prompt: built.prompt,
+        title: t(`eventTitle.${event.id}`, event.title),
+        prompt: t(`decision.${event.id}.prompt`, built.prompt, {
+          nation: built.targetId ? tNation(NATIONS_BY_ID[built.targetId]) : '',
+        }),
         targetId: built.targetId || null,
-        choices: built.choices,
+        choices: built.choices.map((choice) => ({
+          ...choice,
+          label: t(`decision.${event.id}.${choice.id}.label`, choice.label),
+          detail: t(`decision.${event.id}.${choice.id}.detail`, choice.detail),
+        })),
         turn: game.turn,
       },
     };
@@ -612,8 +630,8 @@ function fireEvent(game, rng, mods, event) {
       entry: {
         type: 'event',
         eventId: event.id,
-        title: event.title,
-        text: built.text,
+        title: t(`eventTitle.${event.id}`, event.title),
+        text: eventText(event, built, { nation: tNation(NATIONS_BY_ID[nation.id]) }),
         nationId: nation.id,
         effect: {
           self: scaleStats(built.self, mods.eventSeverity),
@@ -634,8 +652,11 @@ function fireEvent(game, rng, mods, event) {
       entry: {
         type: 'event',
         eventId: event.id,
-        title: event.title,
-        text: built.text,
+        title: t(`eventTitle.${event.id}`, event.title),
+        text: eventText(event, built, {
+          a: tNation(NATIONS_BY_ID[a.id]),
+          b: tNation(NATIONS_BY_ID[b.id]),
+        }),
         pair: [a.id, b.id],
         relationDelta: (built.relationDelta || 0) * mods.eventSeverity,
         worldTension: (built.worldTension || 0) * mods.eventSeverity,
@@ -652,7 +673,7 @@ function fireEvent(game, rng, mods, event) {
       type: 'event',
       eventId: event.id,
       title: event.title,
-      text: built.text,
+      text: eventText(event, built, {}),
       global: built.global,
       favoured: built.favoured,
       punishesTags: built.punishesTags,

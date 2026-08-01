@@ -10,6 +10,7 @@ import { h, mount } from './ui/dom.js';
 import { GameScreen } from './ui/game.js';
 import { SetupScreen } from './ui/setup.js';
 import { THEMES, UI_SCALES, applyTheme, applyUiScale } from './ui/theme.js';
+import { LANGUAGES, currentLanguage, setLanguage, t, tIn, tLabel } from './i18n/index.js';
 import {
   clearSave,
   exportGame,
@@ -35,6 +36,7 @@ class App {
 
   start() {
     const prefs = loadPrefs();
+    setLanguage(prefs.language);
     applyTheme(prefs.theme);
     applyUiScale(prefs.uiScale);
     this.showSetup();
@@ -88,7 +90,7 @@ class App {
   continueGame() {
     const game = loadGame();
     if (!game) {
-      this.toast('No saved run found in this browser.');
+      this.toast(t('toast.noSave', 'No saved run found in this browser.'));
       return;
     }
     this.game = game;
@@ -116,7 +118,7 @@ class App {
       this.screen.render();
       await this.#refreshBriefingFromSave();
       saveGame(this.game);
-      this.toast('Save loaded.');
+      this.toast(t('toast.loaded', 'Save loaded.'));
     } catch (err) {
       this.toast(err.message || 'That file could not be loaded.');
     }
@@ -164,13 +166,15 @@ class App {
     this.#renderOverlays();
 
     if (this.briefing.degraded) {
-      this.toast(`Narration fell back to local text: ${this.briefing.degraded}.`);
+      this.toast(t('toast.degraded', 'Narration fell back to local text: {reason}.', { reason: this.briefing.degraded }));
     }
   }
 
   saveNow() {
     this.game.__lastBriefing = this.briefing;
-    this.toast(saveGame(this.game) ? 'Run saved to this browser.' : 'Could not save — storage is full or blocked.');
+    this.toast(saveGame(this.game)
+      ? t('toast.saved', 'Run saved to this browser.')
+      : t('toast.saveFailed', 'Could not save — storage is full or blocked.'));
   }
 
   exportSave() {
@@ -178,7 +182,8 @@ class App {
   }
 
   quitToMenu() {
-    if (this.game?.status === 'active' && !window.confirm('Leave this run? It stays saved in this browser.')) {
+    if (this.game?.status === 'active'
+      && !window.confirm(t('toast.confirmLeave', 'Leave this run? It stays saved in this browser.'))) {
       return;
     }
     if (this.game) {
@@ -227,14 +232,31 @@ class App {
       },
         h('div.modal__panel',
           h('button.modal__close', { onclick: () => this.closeSettings(), 'aria-label': 'Close' }, '✕'),
-          h('h2.modal__title', 'Settings'),
+          h('h2.modal__title', t('settings.title', 'Settings')),
 
-          h('h3.subhead', 'Appearance'),
+          h('h3.subhead', t('setup.appearance', 'Appearance')),
+          h('label.field',
+            h('span.field__label', t('setup.language', 'Language')),
+            h('div.chips',
+              LANGUAGES.map((lang) =>
+                h('button.chip', {
+                  class: currentLanguage() === lang.id ? 'chip is-active' : 'chip',
+                  onclick: () => {
+                    setLanguage(lang.id);
+                    savePrefs({ language: lang.id });
+                    prefs = loadPrefs();
+                    this.screen?.render?.();
+                    rerender();
+                  },
+                }, lang.native),
+              ),
+            ),
+          ),
           h('div.theme-grid',
             THEMES.map((theme) =>
               h('button.theme-card', {
                 class: prefs.theme === theme.id ? 'theme-card is-active' : 'theme-card',
-                title: theme.blurb,
+                title: tIn('themes', theme.id, 'blurb', theme.blurb),
                 onclick: () => {
                   applyTheme(theme.id);
                   savePrefs({ theme: theme.id });
@@ -244,12 +266,12 @@ class App {
               },
                 h('div.theme-card__swatches',
                   theme.swatch.map((colour) => h('span.theme-card__swatch', { style: { background: colour } }))),
-                h('div.theme-card__name', theme.name),
+                h('div.theme-card__name', tLabel('themes', theme.id, theme.name)),
               ),
             ),
           ),
           h('label.field', { style: { marginTop: '0.75rem' } },
-            h('span.field__label', 'Text size'),
+            h('span.field__label', t('setup.textSize', 'Text size')),
             h('div.chips',
               UI_SCALES.map((scale) =>
                 h('button.chip', {
@@ -260,20 +282,18 @@ class App {
                     prefs = loadPrefs();
                     rerender();
                   },
-                }, scale.name),
+                }, tLabel('scales', scale.id, scale.name)),
               ),
             ),
           ),
 
           h('hr.rule'),
-          h('h3.subhead', 'AI narrator'),
-          h('p.panel__note',
-            'Your API key is stored in this browser only and is sent directly to the provider you choose. ',
-            'The game is fully playable with no provider at all.',
-          ),
+          h('h3.subhead', t('settings.aiNarrator', 'AI narrator')),
+          h('p.panel__note', t('settings.keyNotice',
+            'Your API key is stored in this browser only and is sent directly to the provider you choose. The game is fully playable with no provider at all.')),
 
           h('label.field',
-            h('span.field__label', 'Provider'),
+            h('span.field__label', t('settings.provider', 'Provider')),
             h('select.input', {
               onchange: (e) => {
                 config.providerId = e.target.value;
@@ -288,13 +308,13 @@ class App {
           ),
 
           (PROVIDERS_BY_ID[config.providerId] || PROVIDERS[0]).kind === 'none' ? null : h('label.field',
-            h('span.field__label', 'API key'),
+            h('span.field__label', t('settings.apiKey', 'API key')),
             h('input.input', {
               type: 'password', value: config.apiKey, autocomplete: 'off',
               oninput: (e) => { config.apiKey = e.target.value.trim(); },
             }),
             (PROVIDERS_BY_ID[config.providerId] || PROVIDERS[0]).signupUrl
-              ? h('span.field__hint', 'Free key: ',
+              ? h('span.field__hint', t('settings.freeKeyAt', 'Free key: '),
                   h('a', {
                     href: (PROVIDERS_BY_ID[config.providerId] || PROVIDERS[0]).signupUrl,
                     target: '_blank', rel: 'noreferrer noopener',
@@ -303,7 +323,7 @@ class App {
           ),
 
           (PROVIDERS_BY_ID[config.providerId] || PROVIDERS[0]).kind === 'none' ? null : h('label.field',
-            h('span.field__label', 'Model'),
+            h('span.field__label', t('settings.model', 'Model')),
             h('input.input', {
               type: 'text', list: 'settings-models', value: config.model,
               oninput: (e) => { config.model = e.target.value.trim(); },
@@ -314,7 +334,7 @@ class App {
 
           config.providerId === 'custom'
             ? h('label.field',
-                h('span.field__label', 'Endpoint URL'),
+                h('span.field__label', t('settings.endpoint', 'Endpoint URL')),
                 h('input.input', {
                   type: 'url', value: config.endpoint,
                   oninput: (e) => { config.endpoint = e.target.value.trim(); },
@@ -327,7 +347,7 @@ class App {
               onclick: async (e) => {
                 const btn = e.currentTarget;
                 btn.disabled = true;
-                btn.textContent = 'Testing…';
+                btn.textContent = t('settings.testing', 'Testing…');
                 try {
                   const reply = await new AiClient({ ...config, enabled: true }).test();
                   status = { kind: 'ok', message: `Connected — "${reply}".` };
@@ -336,31 +356,31 @@ class App {
                 }
                 rerender();
               },
-            }, 'Test connection'),
+            }, t('settings.test', 'Test connection')),
             h('button.btn.btn--primary', {
               onclick: () => {
                 saveAiConfig(config);
                 this.narrator.update(config);
-                this.toast('Settings saved.');
+                this.toast(t('settings.saved', 'Settings saved.'));
                 this.closeSettings();
                 this.screen?.render?.();
               },
-            }, 'Save settings'),
+            }, t('settings.saveSettings', 'Save settings')),
           ),
           status ? h('p.status', { class: `status status--${status.kind}` }, status.message) : null,
 
           h('hr.rule'),
-          h('h3.subhead', 'This run'),
+          h('h3.subhead', t('settings.thisRun', 'This run')),
           h('div.row',
-            h('button.btn.btn--ghost.btn--sm', { onclick: () => this.exportSave() }, 'Export save file'),
+            h('button.btn.btn--ghost.btn--sm', { onclick: () => this.exportSave() }, t('settings.exportSave', 'Export save file')),
             h('button.btn.btn--ghost.btn--sm.btn--danger', {
               onclick: () => {
-                if (window.confirm('Delete the saved run in this browser?')) {
+                if (window.confirm(t('toast.confirmDelete', 'Delete the saved run in this browser?'))) {
                   clearSave();
-                  this.toast('Saved run deleted.');
+                  this.toast(t('toast.deleted', 'Saved run deleted.'));
                 }
               },
-            }, 'Delete browser save'),
+            }, t('settings.deleteSave', 'Delete browser save')),
           ),
         ),
       );

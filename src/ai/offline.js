@@ -12,6 +12,7 @@ import { describeChanges } from '../engine/effects.js';
 import { playerLadders } from '../engine/consequences.js';
 import { activeWarsFor, dateLabel, getRelation } from '../engine/state.js';
 import { gameModifiers } from '../engine/worldmodes.js';
+import { t, tAction, tIn, tModifier, tNation } from '../i18n/index.js';
 
 const OUTLETS = [
   'Reuters wire', 'Financial desk', 'Defence correspondent', 'Foreign ministry pool',
@@ -37,11 +38,16 @@ const TIER_PHRASE = {
   backfire: 'blew up in your government\'s face',
 };
 
+const tierPhrase = (tier) => t(`outcome.${tier}`, TIER_PHRASE[tier] || 'concluded');
+
 function joinList(items) {
   if (!items.length) return '';
   if (items.length === 1) return items[0];
-  if (items.length === 2) return `${items[0]} and ${items[1]}`;
-  return `${items.slice(0, -1).join(', ')}, and ${items[items.length - 1]}`;
+  const and = t('common.and', 'and');
+  // Korean lists take a comma throughout rather than a trailing conjunction.
+  if (and === ',') return items.join(', ');
+  if (items.length === 2) return `${items[0]} ${and} ${items[1]}`;
+  return `${items.slice(0, -1).join(', ')}, ${and} ${items[items.length - 1]}`;
 }
 
 // ── The quarterly briefing ──────────────────────────────────────────────────
@@ -95,16 +101,27 @@ export function offlineBriefing(game, report) {
 
 function ordersParagraph(game, report) {
   if (!report.playerOutcomes.length) {
-    return 'Your government issued no orders this quarter. The machinery of state ran on its own settings, which is a decision your opponents will read as one.';
+    return t('brief.noOrders',
+      'Your government issued no orders this quarter. The machinery of state ran on its own settings, which is a decision your opponents will read as one.');
   }
 
   const sentences = report.playerOutcomes.map((o) => {
-    const target = o.targetId ? ` against ${NATIONS_BY_ID[o.targetId].name}` : '';
+    const target = o.targetId ? ` — ${tNation(NATIONS_BY_ID[o.targetId])}` : '';
     const deltas = describeChanges(o.changes, game.playerId);
-    const odds = `${Math.round(o.chance * 100)}%`;
-    const detail = deltas.length ? ` Net effect at home: ${deltas.slice(0, 4).join(', ')}.` : '';
-    const notes = o.notes?.length ? ` Ongoing: ${o.notes.join('; ')}.` : '';
-    return `${o.actionName}${target} ${TIER_PHRASE[o.tier] || 'concluded'} — it was rated ${odds} beforehand and cost ${usd(o.cost)}.${detail}${notes}`;
+    const line = t('brief.orderLine', '{action}{target} {outcome} — it was rated {odds} beforehand and cost {cost}.', {
+      action: tAction({ id: o.actionId, name: o.actionName }),
+      target,
+      outcome: tierPhrase(o.tier),
+      odds: `${Math.round(o.chance * 100)}%`,
+      cost: usd(o.cost),
+    });
+    const detail = deltas.length
+      ? t('brief.netEffect', ' Net effect at home: {deltas}.', { deltas: deltas.slice(0, 4).join(', ') })
+      : '';
+    const notes = o.notes?.length
+      ? t('brief.ongoing', ' Ongoing: {notes}.', { notes: o.notes.join('; ') })
+      : '';
+    return `${line}${detail}${notes}`;
   });
 
   return sentences.join(' ');
@@ -116,12 +133,14 @@ function chainParagraph(game, report) {
 
   const inbound = mine.filter((c) => c.targetId === game.playerId);
   const lines = mine.slice(0, 4).map((c) => c.text);
-  const extra = mine.length > 4 ? ` A further ${mine.length - 4} measures followed in the same week.` : '';
+  const extra = mine.length > 4
+    ? t('brief.moreMeasures', ' A further {n} measures followed in the same week.', { n: mine.length - 4 })
+    : '';
 
   const head = inbound.length >= 3
-    ? 'The response was not proportionate, and it did not stop at one step. '
+    ? t('brief.notProportionate', 'The response was not proportionate, and it did not stop at one step. ')
     : inbound.length
-      ? 'It did not go unanswered. '
+      ? t('brief.answered', 'It did not go unanswered. ')
       : '';
 
   return `${head}${lines.join(' ')}${extra}`;
@@ -132,55 +151,67 @@ function economyParagraph(game, report, state) {
   const drivers = report.economy?.drivers || [];
 
   const headline = growth > 0.8
-    ? 'The economy is running hot'
+    ? t('brief.econHot', 'The economy is running hot')
     : growth > 0.3
-      ? 'The economy grew'
+      ? t('brief.econGrew', 'The economy grew')
       : growth > 0
-        ? 'The economy barely moved'
+        ? t('brief.econFlat', 'The economy barely moved')
         : growth > -0.4
-          ? 'The economy contracted'
-          : 'The economy is in real trouble';
+          ? t('brief.econShrank', 'The economy contracted')
+          : t('brief.econBad', 'The economy is in real trouble');
 
+  const driverName = (d) => t(`driver.${d.label}`, d.label);
   const help = drivers.filter((d) => d.value > 0).slice(0, 2)
-    .map((d) => `${d.label} (${d.value > 0 ? '+' : ''}${d.value})`);
+    .map((d) => `${driverName(d)} (+${d.value})`);
   const hurt = drivers.filter((d) => d.value < 0).slice(0, 2)
-    .map((d) => `${d.label} (${d.value})`);
+    .map((d) => `${driverName(d)} (${d.value})`);
 
   const because = help.length || hurt.length
-    ? ` The gain came from ${joinList(help) || 'nothing in particular'}${hurt.length ? `, against a drag from ${joinList(hurt)}` : ''}.`
+    ? t('brief.because', ' The gain came from {help}{drag}.', {
+        help: joinList(help) || t('brief.nothingParticular', 'nothing in particular'),
+        drag: hurt.length ? t('brief.against', ', against a drag from {hurt}', { hurt: joinList(hurt) }) : '',
+      })
     : '';
 
-  const books = `Revenue was ${usd(report.economy?.playerRevenue ?? 0)} against ${usd(report.economy?.playerUpkeep ?? 0)} of military upkeep.`;
+  const books = t('brief.revenueLine', 'Revenue was {revenue} against {upkeep} of military upkeep.', {
+    revenue: usd(report.economy?.playerRevenue ?? 0),
+    upkeep: usd(report.economy?.playerUpkeep ?? 0),
+  });
   const purse = state.treasury < 0
-    ? ` The treasury is ${usd(-state.treasury)} in the red and the bond desk has started returning calls late.`
-    : ` ${usd(state.treasury)} is available for next quarter.`;
+    ? t('brief.inTheRed', ' The treasury is {amount} in the red and the bond desk has started returning calls late.', { amount: usd(-state.treasury) })
+    : t('brief.availableNext', ' {amount} is available for next quarter.', { amount: usd(state.treasury) });
 
-  return `${headline}: GDP moved ${growth >= 0 ? '+' : ''}${growth}% to $${state.gdp.toFixed(2)}T.${because} ${books}${purse}`;
+  const stem = t('brief.gdpMoved', '{headline}: GDP moved {growth}% to ${gdp}T.', {
+    headline,
+    growth: `${growth >= 0 ? '+' : ''}${growth}`,
+    gdp: state.gdp.toFixed(2),
+  });
+  return `${stem}${because} ${books}${purse}`;
 }
 
 function domesticParagraph(game, state) {
   const bits = [];
-  if (state.unrest > 60) bits.push(`Unrest stands at ${Math.round(state.unrest)} and the security services are asking for instructions`);
-  else if (state.unrest > 42) bits.push(`Unrest is elevated at ${Math.round(state.unrest)}`);
+  if (state.unrest > 60) bits.push(t('brief.unrestHigh', 'Unrest stands at {n} and the security services are asking for instructions', { n: Math.round(state.unrest) }));
+  else if (state.unrest > 42) bits.push(t('brief.unrestMid', 'Unrest is elevated at {n}', { n: Math.round(state.unrest) }));
 
-  if (state.stability < 40) bits.push(`stability has fallen to ${Math.round(state.stability)}, which is the range where governments stop being able to govern`);
-  else if (state.stability < 55) bits.push(`stability sits at ${Math.round(state.stability)}`);
+  if (state.stability < 40) bits.push(t('brief.stabLow', 'stability has fallen to {n}, which is the range where governments stop being able to govern', { n: Math.round(state.stability) }));
+  else if (state.stability < 55) bits.push(t('brief.stabMid', 'stability sits at {n}', { n: Math.round(state.stability) }));
 
-  if (state.approval < 35) bits.push(`approval is down to ${Math.round(state.approval)} and your own party has started briefing against you`);
-  else if (state.approval > 70) bits.push(`approval is high at ${Math.round(state.approval)}, which is political capital you can actually spend`);
+  if (state.approval < 35) bits.push(t('brief.approvalLow', 'approval is down to {n} and your own party has started briefing against you', { n: Math.round(state.approval) }));
+  else if (state.approval > 70) bits.push(t('brief.approvalHigh', 'approval is high at {n}, which is political capital you can actually spend', { n: Math.round(state.approval) }));
 
-  const active = state.modifiers.filter((m) => (m.growth || 0) < 0).slice(0, 2).map((m) => m.label.toLowerCase());
-  if (active.length) bits.push(`${joinList(active)} ${active.length > 1 ? 'are' : 'is'} still weighing on the books`);
+  const active = state.modifiers.filter((m) => (m.growth || 0) < 0).slice(0, 2).map((m) => tModifier(m.label));
+  if (active.length) bits.push(t('brief.weighing', '{list} is still weighing on the books', { list: joinList(active) }));
 
-  return bits.length ? `${bits.join('; ')}.`.replace(/^./, (c) => c.toUpperCase()) : null;
+  return bits.length ? `${bits.join('; ')}.` : null;
 }
 
 function worldParagraph(game, report) {
   const bits = report.events.slice(0, 3).map((e) => e.text);
   const notable = report.worldOutcomes.filter((o) => o.major && o.targetId !== game.playerId).slice(0, 3);
   for (const o of notable) {
-    const target = o.targetId ? ` against ${NATIONS_BY_ID[o.targetId].name}` : '';
-    bits.push(`${NATIONS_BY_ID[o.actorId].name} moved on ${o.actionName.toLowerCase()}${target}.`);
+    const target = o.targetId ? ` → ${tNation(NATIONS_BY_ID[o.targetId])}` : '';
+    bits.push(`${tNation(NATIONS_BY_ID[o.actorId])}: ${tAction({ id: o.actionId, name: o.actionName })}${target}.`);
   }
   return bits.length ? bits.join(' ') : null;
 }
@@ -205,30 +236,44 @@ function buildHeadline(game, report) {
   const player = NATIONS_BY_ID[game.playerId];
 
   if (report.wars.some((w) => w.type === 'nuclear')) {
-    return 'Nuclear weapons used in anger for the first time since 1945';
+    return t('head.nuclear', 'Nuclear weapons used in anger for the first time since 1945');
   }
   const warEnd = report.wars.find((w) => w.type === 'war-end');
   if (warEnd) return warEnd.text.split('.')[0];
 
+  const nation = tNation(player);
+
   const mobilisation = report.consequences.find((c) => c.responseId === 'mobilisation' && c.involvesPlayer);
-  if (mobilisation) return `${NATIONS_BY_ID[mobilisation.actorId].name} mobilises as the crisis with ${player.name} runs out of rungs`;
+  if (mobilisation) {
+    return t('head.mobilisation', '{other} mobilises as the crisis with {nation} runs out of rungs',
+      { other: tNation(NATIONS_BY_ID[mobilisation.actorId]), nation });
+  }
 
   const backfire = report.playerOutcomes.find((o) => o.tier === 'backfire');
-  if (backfire) return `${player.adjective} government reeling as ${backfire.actionName.toLowerCase()} collapses`;
+  if (backfire) {
+    return t('head.backfire', 'Government reeling as {action} collapses',
+      { action: tAction({ id: backfire.actionId, name: backfire.actionName }), nation });
+  }
 
-  const bigChain = report.consequences.filter((c) => c.involvesPlayer).length;
-  if (bigChain >= 3) return `Retaliation against ${player.name} comes in waves, not notes`;
+  if (report.consequences.filter((c) => c.involvesPlayer).length >= 3) {
+    return t('head.waves', 'Retaliation against {nation} comes in waves, not notes', { nation });
+  }
 
   const crit = report.playerOutcomes.find((o) => o.tier === 'critical');
-  if (crit) return `${crit.actionName} lands better than anyone in ${player.name} expected`;
+  if (crit) {
+    return t('head.critical', '{action} lands better than anyone expected',
+      { action: tAction({ id: crit.actionId, name: crit.actionName }), nation });
+  }
 
-  if (report.decision && !report.decision.succeeded) return `${report.decision.title} handled badly`;
-  if (report.events.length) return report.events[0].title;
+  if (report.decision && !report.decision.succeeded) {
+    return t('head.badDecision', '{title} handled badly', { title: report.decision.title });
+  }
+  if (report.events.length) return t(`eventTitle.${report.events[0].eventId}`, report.events[0].title);
 
   const growth = report.economy?.playerGrowth ?? 0;
-  if (growth < -0.3) return `${player.name}'s economy contracts again`;
-  if (game.worldTension > 78) return 'World tension climbs toward the top of the scale';
-  return `${player.name} closes a quarter without incident`;
+  if (growth < -0.3) return t('head.contracting', "{nation}'s economy contracts again", { nation });
+  if (game.worldTension > 78) return t('head.tension', 'World tension climbs toward the top of the scale');
+  return t('head.quiet', '{nation} closes a quarter without incident', { nation });
 }
 
 function buildAdvice(game, report) {
@@ -262,7 +307,8 @@ function buildOutlook(game, report) {
   if (ladders.length) {
     return `Escalation with ${joinList(ladders.slice(0, 2).map((l) => `${NATIONS_BY_ID[l.id].name} (${l.label.toLowerCase()})`))} is the thing to watch.`;
   }
-  return `World tension sits at ${Math.round(game.worldTension)}/100 going into ${dateLabel(game)}.`;
+  return t('brief.tensionOutlook', 'World tension sits at {tension}/100 going into {date}.',
+    { tension: Math.round(game.worldTension), date: dateLabel(game) });
 }
 
 // ── The opening report ──────────────────────────────────────────────────────
@@ -277,47 +323,64 @@ export function offlineOpening(game) {
     .map((id) => ({ id, rel: getRelation(game, game.playerId, id) }))
     .sort((a, b) => a.rel - b.rel)
     .slice(0, 2)
-    .map((r) => NATIONS_BY_ID[r.id].name);
+    .map((r) => tNation(NATIONS_BY_ID[r.id]));
 
   const friends = Object.keys(game.nations)
     .filter((id) => id !== game.playerId)
     .map((id) => ({ id, rel: getRelation(game, game.playerId, id) }))
     .sort((a, b) => b.rel - a.rel)
     .slice(0, 2)
-    .map((r) => NATIONS_BY_ID[r.id].name);
+    .map((r) => tNation(NATIONS_BY_ID[r.id]));
 
   const weakest = ['stability', 'unrest', 'tech', 'influence', 'readiness']
     .map((key) => ({ key, value: key === 'unrest' ? 100 - state[key] : state[key] }))
     .sort((a, b) => a.value - b.value)[0];
 
-  const weakness = {
+  const weakness = t(`open.weak.${weakest.key}`, {
     stability: 'your institutions are the fragile part of the machine',
     unrest: 'the streets are already restless',
     tech: 'your industrial base is behind the frontier',
     influence: 'nobody has to take your calls',
     readiness: 'your forces exist on paper more than in the field',
-  }[weakest.key];
+  }[weakest.key]);
 
   return {
-    headline: `You take office as ${player.leaderTitle} of ${player.name}`,
+    headline: t('open.headline', 'You take office as {title} of {nation}', {
+      title: tNation(player, 'leaderTitle'),
+      nation: tNation(player),
+    }),
     briefing: [
-      `${player.brief} You inherit a $${state.gdp.toFixed(2)}T economy and ${Math.round(state.population)} million people, ` +
-        `with stability at ${Math.round(state.stability)}, unrest at ${Math.round(state.unrest)}, technology at ${Math.round(state.tech)} ` +
-        `and ${usd(state.treasury)} you can actually spend this quarter.`,
-      `Your closest relationships are with ${joinList(friends)}; your worst are with ${joinList(rivals)}. ` +
-        `Of everything on your desk, ${weakness}.`,
-      `The world runs at ${Math.round(game.worldTension)}/100 tension in ${mods.mode.name} on a ${mods.tier.name} setting. ` +
-        `${mods.tier.blurb} You have ${game.totalTurns} quarters, and your mandate is to ` +
-        `${joinList(game.objectives.map((o) => o.title.toLowerCase()))}.`,
+      t('open.p1', '{brief} You inherit a ${gdp}T economy and {pop} million people, with stability at {stability}, unrest at {unrest}, technology at {tech} and {treasury} you can actually spend this quarter.', {
+        brief: tNation(player, 'brief'),
+        gdp: state.gdp.toFixed(2),
+        pop: Math.round(state.population),
+        stability: Math.round(state.stability),
+        unrest: Math.round(state.unrest),
+        tech: Math.round(state.tech),
+        treasury: usd(state.treasury),
+      }),
+      t('open.p2', 'Your closest relationships are with {friends}; your worst are with {rivals}. Of everything on your desk, {weakness}.', {
+        friends: joinList(friends),
+        rivals: joinList(rivals),
+        weakness,
+      }),
+      t('open.p3', 'The world runs at {tension}/100 tension in {mode} on a {tier} setting. {blurb} You have {turns} quarters, and your mandate is to {objectives}.', {
+        tension: Math.round(game.worldTension),
+        mode: t(`mode.${mods.mode.id}`, mods.mode.name),
+        tier: t(`tierName.${mods.tier.name}`, mods.tier.name),
+        blurb: tIn('tiers', mods.tier.name, 'blurb', mods.tier.blurb),
+        turns: game.totalTurns,
+        objectives: joinList(game.objectives.map((o) => t(`objective.${o.id}.title`, o.title))),
+      }),
     ],
     dispatches: [
       {
-        source: 'Cabinet Office',
-        text: `Transition complete. The ${player.leaderTitle.toLowerCase()}'s first orders are expected within the quarter.`,
+        source: t('open.cabinetOffice', 'Cabinet Office'),
+        text: t('open.transition', 'Transition complete. The first orders are expected within the quarter.'),
       },
     ],
-    advisorNote: 'First quarter sets the tone. Do one thing properly rather than four things badly.',
-    outlook: 'Everything from here is your record.',
+    advisorNote: t('open.advice', 'First quarter sets the tone. Do one thing properly rather than four things badly.'),
+    outlook: t('open.outlook', 'Everything from here is your record.'),
   };
 }
 

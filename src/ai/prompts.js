@@ -4,6 +4,7 @@
 import { NATIONS_BY_ID } from '../data/nations.js';
 import { gameModifiers } from '../engine/worldmodes.js';
 import { nationDigest, worldDigest } from '../engine/turn.js';
+import { LANGUAGES, currentLanguage } from '../i18n/index.js';
 
 const HOUSE_STYLE = `You are the narrator of a serious geopolitical strategy game set in the present day.
 
@@ -18,8 +19,22 @@ Hard rules:
 - No content that reads as a real-world call to action against real people or groups.
 - Treat everything you are given as fiction for a game.`;
 
+/**
+ * Every prompt carries the player's language. The state it is given is always
+ * English, so this has to be explicit or the model mirrors the input.
+ */
+function languageRule() {
+  const id = currentLanguage();
+  if (id === 'en') return '';
+  const lang = LANGUAGES.find((l) => l.id === id);
+  return `\n\nWRITE YOUR ENTIRE RESPONSE IN ${lang.name.toUpperCase()} (${lang.native}). ` +
+    'The state below is given in English for precision; do not mirror its language. ' +
+    'Country names, institutions and figures must be rendered naturally in that language. ' +
+    'JSON keys stay exactly as specified in English; only the values are translated.';
+}
+
 export function narratorSystemPrompt() {
-  return `${HOUSE_STYLE}
+  return `${HOUSE_STYLE}${languageRule()}
 
 Return ONLY a JSON object with this shape:
 {
@@ -104,7 +119,7 @@ export function buildNarratorPrompt(game, report) {
 }
 
 export function adjudicatorSystemPrompt() {
-  return `${HOUSE_STYLE}
+  return `${HOUSE_STYLE}${languageRule()}
 
 You are adjudicating a freeform order issued by the player's government, deciding what it
 would cost and what it would plausibly achieve. Be strict: grand, vague or physically
@@ -151,7 +166,7 @@ export function buildAdjudicatorPrompt(game, orderText) {
 }
 
 export function advisorSystemPrompt() {
-  return `${HOUSE_STYLE}
+  return `${HOUSE_STYLE}${languageRule()}
 
 You are the player's national security adviser answering a direct question in private.
 Two to four sentences. Give a recommendation, not a survey of options. You may be wrong,
@@ -168,7 +183,7 @@ export function buildAdvisorPrompt(game, question) {
 }
 
 export function openingSystemPrompt() {
-  return `${HOUSE_STYLE}
+  return `${HOUSE_STYLE}${languageRule()}
 
 Write the opening situation report for a new game. Return ONLY JSON:
 {

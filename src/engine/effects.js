@@ -4,6 +4,7 @@
 
 import { NATIONS_BY_ID } from '../data/nations.js';
 import { addModifier, adjustRelation, clamp } from './state.js';
+import { t, tModifier, tStat } from '../i18n/index.js';
 
 const STAT_FIELDS = {
   military: [0, 100],
@@ -95,7 +96,10 @@ export function applyEffect(game, actorId, targetId, effect, { tensionScale = 1 
 
   if (effect.modifier) {
     addModifier(game, actorId, effect.modifier);
-    notes.push(`${effect.modifier.label} (${effect.modifier.turns ?? 4} turns)`);
+    notes.push(t('modifier.forTurns', '{label} ({turns} turns)', {
+      label: tModifier(effect.modifier.label),
+      turns: effect.modifier.turns ?? 4,
+    }));
   }
   if (targetId && effect.targetModifier) {
     addModifier(game, targetId, effect.targetModifier);
@@ -134,16 +138,11 @@ export function applyEffect(game, actorId, targetId, effect, { tensionScale = 1 
 
 /** Human-readable summary of a change list, e.g. "stability +3, tech +2". */
 export function describeChanges(changes, nationId = null) {
-  const labels = {
-    gdp: 'GDP',
-    treasury: 'treasury',
-    worldTension: 'world tension',
-  };
   return changes
     .filter((c) => (nationId ? c.nationId === nationId : true))
     .filter((c) => Math.abs(c.delta) >= 0.01)
     .map((c) => {
-      const name = labels[c.field] || c.field;
+      const name = tStat(c.field);
       if (c.field === 'treasury') {
         return `${name} ${c.delta >= 0 ? '+' : '−'}$${Math.abs(Math.round(c.delta))}B`;
       }

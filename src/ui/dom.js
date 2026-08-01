@@ -1,3 +1,5 @@
+import { t } from '../i18n/index.js';
+
 // Tiny DOM helpers. No framework, no build step — the whole game is served as
 // plain ES modules.
 
@@ -83,13 +85,13 @@ export function statColour(value, invert = false) {
 }
 
 export function relationLabel(value) {
-  if (value >= 70) return 'Allied';
-  if (value >= 40) return 'Friendly';
-  if (value >= 15) return 'Cordial';
-  if (value > -15) return 'Neutral';
-  if (value > -40) return 'Cool';
-  if (value > -70) return 'Hostile';
-  return 'Enemy';
+  if (value >= 70) return t('relation.allied', 'Allied');
+  if (value >= 40) return t('relation.friendly', 'Friendly');
+  if (value >= 15) return t('relation.cordial', 'Cordial');
+  if (value > -15) return t('relation.neutral', 'Neutral');
+  if (value > -40) return t('relation.cool', 'Cool');
+  if (value > -70) return t('relation.hostile', 'Hostile');
+  return t('relation.enemy', 'Enemy');
 }
 
 export function relationColour(value) {
