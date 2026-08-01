@@ -305,16 +305,25 @@ test('higher difficulty produces measurably worse outcomes', () => {
         decisionChoice: game.pendingDecision?.choices?.[0]?.id ?? null,
       });
     }
-    return scoreRun(game);
+    return { gdp: game.nations.bra.gdp, score: scoreRun(game) };
   };
 
   // Averaged over several seeds, since any single run is noisy by design.
-  const avg = (difficulty) => {
-    const seeds = ['a', 'b', 'c', 'd', 'e'];
-    return seeds.reduce((sum, s) => sum + play(difficulty, `${difficulty}-${s}`).components[0].value, 0) / seeds.length;
-  };
+  // Measured on the raw quantities rather than the graded components: the
+  // economy objective is easy enough for Brazil that its component pegs at 100
+  // on every setting, which would hide a gradient that is really there.
+  const seeds = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'];
+  const avg = (difficulty, pick) =>
+    seeds.reduce((sum, s) => sum + pick(play(difficulty, `${difficulty}-${s}`)), 0) / seeds.length;
 
-  assert.ok(avg(2) > avg(9), 'the economy should fare better on an easier setting');
+  assert.ok(
+    avg(2, (r) => r.gdp) > avg(9, (r) => r.gdp),
+    'the economy should fare better on an easier setting',
+  );
+  assert.ok(
+    avg(2, (r) => r.score.components[1].value) > avg(9, (r) => r.score.components[1].value),
+    'the country should hold together better on an easier setting',
+  );
 });
 
 // ── War ────────────────────────────────────────────────────────────────────

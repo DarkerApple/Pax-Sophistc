@@ -29,6 +29,10 @@ export class SetupScreen {
       region: 'all',
       ai: loadAiConfig(),
       testStatus: null,
+      // Which sidebar folds are open. Kept here because choosing a theme
+      // re-renders the screen, and a fold that snapped shut every time you
+      // picked one would be unusable.
+      openFolds: new Set(),
     };
   }
 
@@ -45,11 +49,15 @@ export class SetupScreen {
             this.#countryGrid(),
           ),
           h('div.setup__side',
-            this.#worldModePanel(),
+            // Difficulty first: it is the one control every player touches, and
+            // it must not be hidden below three world cards.
             this.#difficultyPanel(),
-            this.#appearancePanel(),
-            this.#rulesPanel(),
-            this.#aiPanel(),
+            this.#worldModePanel(),
+            // Everything below is set once and forgotten, so it starts folded
+            // and the sidebar stops running half a page past the country list.
+            this.#fold('appearance', t('setup.appearance', 'Appearance'), this.#appearancePanel()),
+            this.#fold('rules', t('setup.runSettings', 'Run settings'), this.#rulesPanel()),
+            this.#fold('ai', t('settings.aiOptional', 'AI narrator (optional)'), this.#aiPanel(), this.#aiSummary()),
             this.#startPanel(),
           ),
         ),
@@ -60,12 +68,35 @@ export class SetupScreen {
   #hero() {
     return h('header.hero',
       h('div.hero__mark', 'PAX'),
-      h('div',
+      h('div.hero__body',
         h('h1.hero__title', 'Pax Sophistc'),
         h('p.hero__sub', t('app.tagline',
           'Run any country on earth from 2026 onward. Choose the world you want to play in, set how hard it pushes back, and see how far you get. Runs entirely in your browser; free AI narration optional.')),
       ),
+      // The language switch lives in the header rather than three panels down:
+      // it is the first thing a player who does not read English needs.
+      this.#languageSwitch(),
     );
+  }
+
+  /** Two chips, always visible, that change the whole interface language. */
+  #languageSwitch() {
+    return h('div.langswitch', { role: 'group', 'aria-label': t('setup.language', 'Language') },
+      LANGUAGES.map((lang) =>
+        h('button.langswitch__btn', {
+          class: currentLanguage() === lang.id ? 'langswitch__btn is-active' : 'langswitch__btn',
+          'aria-pressed': String(currentLanguage() === lang.id),
+          onclick: () => this.#setLanguage(lang.id),
+        }, lang.native),
+      ),
+    );
+  }
+
+  #setLanguage(id) {
+    setLanguage(id);
+    savePrefs({ language: id });
+    this.state.language = id;
+    this.render();
   }
 
   #quickstart() {
@@ -102,11 +133,13 @@ export class SetupScreen {
               h('span.mode-card__name', tLabel('modes', mode.id, mode.name)),
             ),
             h('div.mode-card__blurb', tIn('modes', mode.id, 'blurb', mode.blurb)),
-            h('div.mode-card__traits',
-              (tIn('modes', mode.id, 'traits', null) || mode.traits).map((trait) => h('span.badge', trait))),
             this.state.worldMode === mode.id
-              ? h('ul.difficulty__list', { style: { marginTop: '0.5rem' } },
-                  modePreview(mode.id).map((line) => h('li', line)))
+              ? h('div',
+                  h('div.mode-card__traits',
+                    (tIn('modes', mode.id, 'traits', null) || mode.traits).map((trait) => h('span.badge', trait))),
+                  h('ul.difficulty__list', { style: { marginTop: '0.5rem' } },
+                    modePreview(mode.id).map((line) => h('li', line))),
+                )
               : null,
           ),
         ),
@@ -224,7 +257,11 @@ export class SetupScreen {
           'aria-label': 'Difficulty',
           oninput: (e) => { this.state.difficulty = Number(e.target.value); this.render(); },
         }),
-        h('div.slider__scale', h('span', 'Détente'), h('span', 'Contested'), h('span', 'Doomsday')),
+        h('div.slider__scale',
+          h('span', t('setup.scaleLow', 'Détente')),
+          h('span', t('setup.scaleMid', 'Contested')),
+          h('span', t('setup.scaleHigh', 'Doomsday')),
+        ),
         h('p.difficulty__blurb', tIn('tiers', mods.tier.name, 'blurb', mods.tier.blurb)),
         h('ul.difficulty__list', difficultyPreview(this.state.difficulty).map((line) => h('li', line))),
       ),
@@ -232,8 +269,7 @@ export class SetupScreen {
   }
 
   #appearancePanel() {
-    return h('section.panel',
-      h('h2.panel__title', t('setup.appearance', 'Appearance')),
+    return h('div',
       h('div.theme-grid',
         THEMES.map((theme) =>
           h('button.theme-card', {
@@ -288,8 +324,7 @@ export class SetupScreen {
   }
 
   #rulesPanel() {
-    return h('section.panel',
-      h('h2.panel__title', t('setup.runSettings', 'Run settings')),
+    return h('div',
       h('label.field',
         h('span.field__label', t('setup.termLength', 'Length of term')),
         h('select.input', { onchange: (e) => { this.state.totalTurns = Number(e.target.value); } },
@@ -316,8 +351,7 @@ export class SetupScreen {
     const provider = PROVIDERS_BY_ID[this.state.ai.providerId] || PROVIDERS[0];
     const isOffline = provider.kind === 'none';
 
-    return h('section.panel',
-      h('h2.panel__title', t('settings.aiOptional', 'AI narrator (optional)')),
+    return h('div',
       h('p.panel__note', t('settings.aiNotice',
         'The game is fully playable without this. A language model writes the briefings, judges freeform orders and answers your advisers. Every option below has a free tier.')),
       h('label.field',
@@ -388,6 +422,35 @@ export class SetupScreen {
               : null,
           ),
     );
+  }
+
+  /**
+   * A panel that folds. Native <details>, so keyboard and screen-reader
+   * behaviour come for free; the open/closed state is remembered here so a
+   * re-render does not slam it shut mid-choice.
+   */
+  #fold(id, title, body, summary = null) {
+    return h('details.panel.panel--fold', {
+      open: this.state.openFolds.has(id),
+      ontoggle: (e) => {
+        if (e.currentTarget.open) this.state.openFolds.add(id);
+        else this.state.openFolds.delete(id);
+      },
+    },
+      h('summary.panel__fold',
+        h('span.panel__title', title),
+        summary ? h('span.panel__foldValue', summary) : null,
+      ),
+      h('div.panel__foldBody', body),
+    );
+  }
+
+  /** What the AI fold says while it is closed. */
+  #aiSummary() {
+    const provider = PROVIDERS_BY_ID[this.state.ai.providerId] || PROVIDERS[0];
+    return provider.kind === 'none'
+      ? t('setup.aiOff', 'Off — briefings written locally')
+      : provider.label;
   }
 
   async #testConnection(button) {

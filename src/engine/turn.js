@@ -8,12 +8,14 @@ import { runOpponents } from './opponents.js';
 import { decayLadders, domesticBlowback, playerLadders, resolveConsequences } from './consequences.js';
 import { availableFunds, creditLimit, debtOf, serviceDebt } from './finance.js';
 import { resolveAction, resolveDecision } from './resolve.js';
+import { driftAlignments } from './statecraft.js';
 import {
   QUARTERS,
   activeWarsFor,
   adjustRelation,
   clamp,
   dateLabel,
+  defOf,
   getRelation,
   livePower,
   logEvent,
@@ -108,9 +110,18 @@ export function advanceTurn(game, { orders = [], decisionChoice = null } = {}) {
     const rolled = rollEvents(game, rng, mods);
     for (const entry of rolled.entries) {
       applyEventEntry(game, entry);
+      // An event that redraws the map or changes an alliance does it here,
+      // after its statistical damage has been applied.
+      if (typeof entry.follow === 'function') {
+        entry.outcome = entry.follow(game, rng) || null;
+        entry.follow = null;
+      }
       report.events.push(entry);
       logEvent(game, { type: 'event', severity: 'info', text: entry.text });
     }
+
+    // Countries also drift between camps on their own, without an event.
+    report.realignments = driftAlignments(game, rng, mods);
     if (rolled.decision) {
       game.pendingDecision = rolled.decision;
       report.newDecision = rolled.decision;
@@ -137,12 +148,27 @@ export function advanceTurn(game, { orders = [], decisionChoice = null } = {}) {
 
     // 8. Snapshot + endgame check.
     for (const state of Object.values(game.nations)) {
-      state.history.push({
+      const snapshot = {
         turn: game.turn,
         gdp: Number(state.gdp.toFixed(3)),
         military: Math.round(state.military),
         stability: Math.round(state.stability),
-      });
+      };
+      // The player's card shows a quarter-on-quarter change for every figure on
+      // it, so the player's row keeps the full set. Everyone else keeps three,
+      // which is all the charts and the AI digest ever read.
+      if (state.id === game.playerId) {
+        Object.assign(snapshot, {
+          readiness: Math.round(state.readiness),
+          tech: Math.round(state.tech),
+          unrest: Math.round(state.unrest),
+          approval: Math.round(state.approval),
+          influence: Math.round(state.influence),
+          treasury: Math.round(state.treasury),
+          population: Math.round(state.population),
+        });
+      }
+      state.history.push(snapshot);
       if (state.history.length > 60) state.history.shift();
     }
 
@@ -177,6 +203,12 @@ function applyEventEntry(game, entry) {
   }
   if (entry.appliesTo) {
     applyEffect(game, entry.appliesTo, null, entry.effect);
+    if (entry.relationShock) {
+      adjustRelation(game, game.playerId, entry.appliesTo, entry.relationShock);
+    }
+    if (entry.worldTension) {
+      game.worldTension = clamp(game.worldTension + entry.worldTension, 0, 100);
+    }
   }
 }
 
@@ -248,13 +280,13 @@ function economyTick(game, rng, mods) {
     // Stability reverts toward a structural baseline, but sustained unrest
     // drags that baseline down — which is how a state actually fails, rather
     // than being rescued by its own equilibrium every quarter.
-    const def = NATIONS_BY_ID[state.id];
+    const def = defOf(game, state.id);
     const equilibrium = def.stability - Math.max(0, state.unrest - 40) * 0.85;
     state.stability = clamp(state.stability + (equilibrium - state.stability) * 0.085);
     state.unrest = clamp(state.unrest + (state.unrest > def.unrest ? -0.8 : 0.35));
     state.readiness = clamp(state.readiness + (state.readiness < 70 ? 0.6 : -0.2));
     state.approval = clamp(state.approval + (50 - state.approval) * 0.06);
-    state.population = state.population * (1 + (NATIONS_BY_ID[state.id].growth > 1 ? 0.0018 : 0.0003));
+    state.population = state.population * (1 + (def.growth > 1 ? 0.0018 : 0.0003));
 
     if (isPlayer) {
       summary.playerGrowth = Number(growth.toFixed(2));
@@ -444,13 +476,13 @@ export function worldDigest(game, limit = 12) {
     escalation: playerLadders(game)
       .filter((l) => l.value >= 1.5)
       .slice(0, 5)
-      .map((l) => ({ with: NATIONS_BY_ID[l.id].name, level: Number(l.value.toFixed(1)), band: l.label })),
+      .map((l) => ({ with: defOf(game, l.id).name, level: Number(l.value.toFixed(1)), band: l.label })),
     wars: game.wars
       .filter((w) => w.active)
       .map((w) => ({
         name: w.name,
-        attackers: w.attackers.map((id) => NATIONS_BY_ID[id].name),
-        defenders: w.defenders.map((id) => NATIONS_BY_ID[id].name),
+        attackers: w.attackers.map((id) => defOf(game, id).name),
+        defenders: w.defenders.map((id) => defOf(game, id).name),
         warScore: Math.round(w.warScore),
         casualties: w.casualties,
       })),
@@ -459,7 +491,7 @@ export function worldDigest(game, limit = 12) {
 
 export function nationDigest(game, id) {
   const state = game.nations[id];
-  const def = NATIONS_BY_ID[id];
+  const def = defOf(game, id);
   return {
     id,
     name: def.name,

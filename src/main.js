@@ -8,6 +8,7 @@ import { advanceTurn } from './engine/turn.js';
 import { CATEGORIES } from './engine/actions.js';
 import { h, mount } from './ui/dom.js';
 import { GameScreen } from './ui/game.js';
+import { VIEW_MODES } from './ui/map.js';
 import { SetupScreen } from './ui/setup.js';
 import { THEMES, UI_SCALES, applyTheme, applyUiScale } from './ui/theme.js';
 import { LANGUAGES, currentLanguage, setLanguage, t, tIn, tLabel } from './i18n/index.js';
@@ -170,6 +171,13 @@ class App {
     }
   }
 
+  /** Switch the interface language and redraw whatever is on screen. */
+  setLanguage(id) {
+    setLanguage(id);
+    savePrefs({ language: id });
+    this.screen?.render?.();
+  }
+
   saveNow() {
     this.game.__lastBriefing = this.briefing;
     this.toast(saveGame(this.game)
@@ -242,10 +250,8 @@ class App {
                 h('button.chip', {
                   class: currentLanguage() === lang.id ? 'chip is-active' : 'chip',
                   onclick: () => {
-                    setLanguage(lang.id);
-                    savePrefs({ language: lang.id });
+                    this.setLanguage(lang.id);
                     prefs = loadPrefs();
-                    this.screen?.render?.();
                     rerender();
                   },
                 }, lang.native),
@@ -434,10 +440,85 @@ document.addEventListener('keydown', (e) => {
     return;
   }
 
+  const key = e.key.toLowerCase();
+
+  // The order queue.
+  if (e.key === 'Backspace' && screen.orders.length) {
+    screen.orders.pop();
+    screen.render();
+    e.preventDefault();
+    return;
+  }
+  if (key === 'x' && screen.orders.length) {
+    screen.orders = [];
+    screen.render();
+    e.preventDefault();
+    return;
+  }
+  if (key === 'f') {
+    const box = document.querySelector('.custom__box');
+    if (box) {
+      box.focus();
+      box.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      e.preventDefault();
+      return;
+    }
+  }
+  if (key === 's') {
+    app.saveNow();
+    e.preventDefault();
+    return;
+  }
+
+  // The map.
+  if (key === 'v') {
+    const at = VIEW_MODES.findIndex((m) => m.id === screen.mapMode);
+    screen.mapMode = VIEW_MODES[(at + 1) % VIEW_MODES.length].id;
+    screen.map?.setMode(screen.mapMode);
+    screen.render();
+    e.preventDefault();
+    return;
+  }
+  if (key === 't') {
+    screen.showTerritory = !screen.showTerritory;
+    screen.map?.setShowTerritory(screen.showTerritory);
+    screen.render();
+    e.preventDefault();
+    return;
+  }
+  if (key === 'g') {
+    screen.map?.centreOn(app.game.playerId, Math.max(2.6, screen.map.zoom));
+    e.preventDefault();
+    return;
+  }
+  if (key === 'p') {
+    const target = screen.pinnedId || screen.hoverId;
+    screen.pinnedId = screen.pinnedId ? null : target;
+    screen.map?.setSelected(screen.pinnedId);
+    screen.render();
+    e.preventDefault();
+    return;
+  }
+
+  // The briefing.
+  if (e.key === ',' || e.key === '.') {
+    const tabs = ['briefing', 'dispatches', 'advisor', 'log'];
+    const at = tabs.indexOf(screen.feedTab);
+    const next = e.key === '.' ? at + 1 : at - 1;
+    screen.feedTab = tabs[(next + tabs.length) % tabs.length];
+    screen.render();
+    e.preventDefault();
+    return;
+  }
+
   if (screen.map) {
     if (e.key === '+' || e.key === '=') { screen.map.zoomBy(1.3); e.preventDefault(); }
     else if (e.key === '-' || e.key === '_') { screen.map.zoomBy(1 / 1.3); e.preventDefault(); }
     else if (e.key === '0') { screen.map.resetCamera(); e.preventDefault(); }
+    else if (e.key === 'ArrowLeft') { screen.map.panBy(60, 0); e.preventDefault(); }
+    else if (e.key === 'ArrowRight') { screen.map.panBy(-60, 0); e.preventDefault(); }
+    else if (e.key === 'ArrowUp') { screen.map.panBy(0, 60); e.preventDefault(); }
+    else if (e.key === 'ArrowDown') { screen.map.panBy(0, -60); e.preventDefault(); }
   }
 });
 

@@ -1,10 +1,12 @@
 // Game state construction, serialisation, and the small helpers every other
 // engine module leans on.
 
-import { NATIONS, NATIONS_BY_ID, RELATION_ANCHORS, powerRank } from '../data/nations.js';
+import { NATIONS_BY_ID, powerRank, registerNation } from '../data/nations.js';
+import { DEFAULT_SCENARIO, scenarioOf } from '../data/scenarios.js';
 import { Rng, hashSeed } from './rng.js';
 import { clampDifficulty } from './difficulty.js';
 import { worldMode } from './worldmodes.js';
+import { createTerritory } from './territory.js';
 
 export const SAVE_VERSION = 1;
 export const QUARTERS = ['Q1', 'Q2', 'Q3', 'Q4'];
@@ -61,12 +63,12 @@ function sharedBlocs(a, b) {
  * Seed the relation matrix: bloc membership and geography set the baseline,
  * then the historical anchors overwrite the pairs the real world has settled.
  */
-function buildRelations(rng, scramble = 0) {
+function buildRelations(roster, anchors, rng, scramble = 0) {
   const relations = {};
-  for (let i = 0; i < NATIONS.length; i++) {
-    for (let j = i + 1; j < NATIONS.length; j++) {
-      const a = NATIONS[i];
-      const b = NATIONS[j];
+  for (let i = 0; i < roster.length; i++) {
+    for (let j = i + 1; j < roster.length; j++) {
+      const a = roster[i];
+      const b = roster[j];
       const shared = sharedBlocs(a, b);
       let value = 4;
       value += shared.length * 26;
@@ -77,7 +79,7 @@ function buildRelations(rng, scramble = 0) {
       relations[relationKey(a.id, b.id)] = clamp(Math.round(value), -100, 100);
     }
   }
-  for (const [a, b, value] of RELATION_ANCHORS) {
+  for (const [a, b, value] of anchors) {
     if (NATIONS_BY_ID[a] && NATIONS_BY_ID[b]) {
       relations[relationKey(a, b)] = clamp(value, -100, 100);
     }
@@ -114,7 +116,19 @@ function initialNationState(def) {
     sanctionedBy: [],
     doctrine: def.doctrine,
     lastAction: null,
-    history: [{ turn: 0, gdp: def.gdp, military: def.military, stability: def.stability }],
+    history: [{
+      turn: 0,
+      gdp: def.gdp,
+      military: def.military,
+      stability: def.stability,
+      readiness: def.readiness,
+      tech: def.tech,
+      unrest: def.unrest,
+      approval: clamp(def.stability - def.unrest * 0.3 + 12),
+      influence: def.influence,
+      treasury: Math.round(def.gdp * 1000 * 0.05),
+      population: Math.round(def.population),
+    }],
   };
 }
 
@@ -180,10 +194,14 @@ export function createGame({
   difficulty = 5,
   seed = null,
   totalTurns = 40,
-  scenario = 'current-world',
+  scenario = DEFAULT_SCENARIO,
   mode = 'current',
 } = {}) {
-  if (!NATIONS_BY_ID[playerNationId]) {
+  // The roster comes from the scenario, never from an import, so a second era
+  // is a data pack rather than an engine change.
+  const world = scenarioOf(scenario);
+  const roster = world.nations;
+  if (!roster.some((n) => n.id === playerNationId)) {
     throw new Error(`Unknown nation: ${playerNationId}`);
   }
   const resolvedSeed = seed === null || seed === '' ? String(Math.floor(Math.random() * 1e9)) : String(seed);
@@ -191,13 +209,13 @@ export function createGame({
   const def = NATIONS_BY_ID[playerNationId];
 
   const nations = {};
-  for (const nation of NATIONS) nations[nation.id] = initialNationState(nation);
+  for (const nation of roster) nations[nation.id] = initialNationState(nation);
 
   const knobs = worldMode(mode).knobs;
 
   const game = {
     version: SAVE_VERSION,
-    scenario,
+    scenario: world.id,
     worldMode: worldMode(mode).id,
     seed: resolvedSeed,
     rngState: rng.state,
@@ -206,14 +224,23 @@ export function createGame({
     playerId: playerNationId,
     turn: 0,
     totalTurns,
-    year: START_YEAR,
+    year: world.startYear,
     quarter: 0,
     worldTension: clamp(42 + knobs.tensionOffset, 0, 100),
     globalGrowth: 1,
     nations,
-    relations: buildRelations(rng, knobs.scrambleRelations),
+    relations: buildRelations(roster, world.anchors, rng, knobs.scrambleRelations),
     wars: [],
     treaties: [],
+    // Only the cells that have changed hands are stored; the starting map is
+    // recomputed from geography, so saves stay small.
+    territory: createTerritory(),
+    // States that did not exist at the start of the run — breakaways, unions,
+    // successor republics. Keyed the same way as the roster.
+    customNations: {},
+    // Bloc membership is a live fact, not a fixed attribute: countries join and
+    // leave. Seeded from the roster, then edited by play.
+    blocMembership: Object.fromEntries(roster.map((n) => [n.id, [...(n.blocs || [])]])),
     // Per-pair escalation ladders, keyed like relations.
     escalation: {},
     log: [],
@@ -249,6 +276,44 @@ export function playerNation(game) {
 
 export function nationDef(id) {
   return NATIONS_BY_ID[id];
+}
+
+/**
+ * The definition sheet for any state in play, including ones invented mid-run.
+ * Use this rather than NATIONS_BY_ID anywhere a breakaway could turn up.
+ */
+export function defOf(game, id) {
+  return NATIONS_BY_ID[id] || game?.customNations?.[id] || null;
+}
+
+/** Blocs a country belongs to *now*, which is not always what it started in. */
+export function blocsOf(game, id) {
+  const live = game?.blocMembership?.[id];
+  if (live) return live;
+  return defOf(game, id)?.blocs || [];
+}
+
+export function inBloc(game, id, blocId) {
+  return blocsOf(game, id).includes(blocId);
+}
+
+/** Join a bloc. Returns true when it was actually a change. */
+export function joinBloc(game, id, blocId) {
+  if (!game.blocMembership) game.blocMembership = {};
+  const list = game.blocMembership[id] || (game.blocMembership[id] = []);
+  if (list.includes(blocId)) return false;
+  list.push(blocId);
+  return true;
+}
+
+/** Leave a bloc. Returns true when it was actually a change. */
+export function leaveBloc(game, id, blocId) {
+  const list = game?.blocMembership?.[id];
+  if (!list) return false;
+  const at = list.indexOf(blocId);
+  if (at < 0) return false;
+  list.splice(at, 1);
+  return true;
 }
 
 export function dateLabel(game) {
@@ -360,5 +425,8 @@ export function deserialize(json) {
   if (!game.nations || !game.nations[game.playerId]) {
     throw new Error('Save file is missing its player nation.');
   }
+  // States invented during the saved run have to be taught to the lookup again
+  // before anything asks for their name or flag.
+  for (const def of Object.values(game.customNations || {})) registerNation(def);
   return game;
 }

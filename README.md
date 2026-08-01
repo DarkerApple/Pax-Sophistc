@@ -10,7 +10,7 @@ writes the briefings and judges your freeform orders — and every provider it s
 
 ```bash
 npm start          # http://localhost:5173
-npm test           # 82 engine, AI-boundary, world-mode, map and translation tests
+npm test           # 101 engine, territory, AI-boundary, world-mode, map and translation tests
 ```
 
 There is nothing to install. `npm start` runs a ~60-line static file server from
@@ -42,13 +42,29 @@ events at you, wars grind forward, and the books get balanced.
   before it reaches the simulation (see [Trust boundary](#trust-boundary)).
 - **Crisis decisions** land on your desk: an ultimatum, a corruption scandal, a defector, a
   closed strait. You choose, or you decline to choose and pay for that too.
+- **Things that were nobody's plan.** Riots, epidemics, power-plant failures, industrial
+  disasters, earthquakes, harvest failures, currency crises, general strikes, assassinations,
+  coups at home and coups next door. Each carries **a stated cause drawn from your own
+  state** — a grid failure under sanctions blames spare parts; the same failure in a solvent
+  country blames a maintenance backlog nobody funded — and each reports real figures rather
+  than a shrug.
 - **Five outcome tiers** per order — decisive success, success, partial, failure, backfire —
   driven by your country's real stats, not a flat dice roll. A tech-90 country runs a better
   R&D programme than a tech-40 one.
 - **Wars** you start, get dragged into by treaty, or have declared on you. They are decided
   by force ratios, readiness, home ground and exhaustion, and they end in victory,
   stalemate, negotiated peace — or, if a losing nuclear power gets desperate enough and the
-  difficulty is high enough, worse.
+  difficulty is high enough, worse. Whoever is winning **takes ground quarter by quarter**;
+  a decisive peace keeps most of it, an exhausted one hands every acre back.
+- **Countries come apart.** A coup in a fragile state, or a separatist uprising in a big
+  unhappy one, can carve a province off into a **new country** — with a generated name in
+  both languages, a government, a doctrine, and statistics derived from the parent in
+  proportion to the land it took. It then sits on the map with its own colour and its own
+  very large grievance.
+- **Sides are not fixed.** Governments join and leave NATO, the EU, BRICS+, the CSTO, the
+  SCO, the GCC, ASEAN and the African Union during a run — sometimes by event, sometimes
+  because their friendships have drifted far enough from their formal commitments that the
+  paperwork finally catches up.
 
 At the end of your term you are graded across five components against the mandate you were
 given on day one.
@@ -137,6 +153,12 @@ latitude and longitude, sized by live national power.
   read it.
 - **Five view modes**, each with its own legend: Relations, Power, Stability, Alignment and
   Conflict.
+- **Filled territory.** Every country holds actual ground, not just a dot. The land is
+  rasterised from the continent outlines into one-degree cells and assigned to capitals by a
+  weighted fit weighted so each country's claim lands close to its real land area; land no
+  country on the roster can reach stays unclaimed. Wars, secessions and land sales move those
+  cells, so the borders you are looking at are the live state of the world. `T` turns the
+  fill off.
 - **Hover goes to the sidebar, not over the map.** Pointing at a country fills the *Country
   inspector* panel on the left; clicking pins it there, clicking again opens its full file.
   Nothing ever draws on top of the map.
@@ -179,13 +201,39 @@ not just the body copy.
 - The bottom bar tells you when you are about to end a quarter with money and political
   capital still unspent, which is the commonest beginner mistake.
 
-**Keyboard:** `Enter` ends the quarter · `1`–`6` switch order category · `+` `−` `0` zoom the
-map · `?` opens help · `Esc` closes whatever is open.
+- **Every figure carries context.** A statistic shows which way it moved this quarter, where
+  it puts you in the world, and a plain word for it — `Stability 58 ▲2 · holding · #17 of 56`.
+  GDP carries per-head and rank, the treasury carries its share of GDP, and land carries how
+  far it has drifted since the day you took office.
+- **Your grip** on the left panel reads how much of the quarter is actually yours to shape —
+  political capital, public consent, institutional capacity and money, minus everything
+  already running without you. It also names what that is.
+
+**Keyboard**
+
+| | |
+|---|---|
+| `Enter` | End the quarter |
+| `1`–`9` | Jump to an order category |
+| `Backspace` / `X` | Remove the last order / clear the queue |
+| `F` | Write a freeform order |
+| `S` | Save the run |
+| `V` | Cycle what the map colours by |
+| `T` | Show or hide filled territory |
+| `G` | Centre the map on your country |
+| `P` | Pin or unpin the inspected country |
+| `+` `−` `0` | Zoom in, out, reset |
+| arrows | Pan the map |
+| `,` `.` | Previous / next briefing tab |
+| `?` / `Esc` | Help / close whatever is open |
+
+The same table is in the game, generated from `src/ui/keys.js` — a shortcut cannot exist
+without being documented and cannot be documented without existing.
 
 ## Language
 
-The whole interface ships in **English and Korean**, switchable in Setup or Settings and
-remembered between runs. That covers the chrome, all 56 country names and one-line briefs,
+The whole interface ships in **English and Korean**, switchable from **the header on the
+setup screen and the top bar in game** — one click, no menus — and remembered between runs. That covers the chrome, all 56 country names and one-line briefs,
 all 51 order names and descriptions, the world modes, difficulty tiers, themes, help,
 events, decisions, escalation and war text — and the locally generated quarterly briefing,
 which is composed from translated fragments rather than translated after the fact.
@@ -284,14 +332,18 @@ src/
   data/
     nations.js        the world: 56 countries, blocs, doctrines, relation anchors
     geography.js      hand-digitised continent outlines for the map
+    scenarios.js      the era registry — a second era is a data file, not a rewrite
   engine/
     rng.js            seeded, serialisable RNG
     difficulty.js     the slider → every knob in the simulation
     worldmodes.js     Stable / Current / Chaotic, composed with difficulty
     consequences.js   escalation ladders and chain reactions
+    territory.js      the land grid: who holds what, and how it changes hands
+    statecraft.js     secession, land sales, and changing sides
+    causes.js         why an event happened, scored against live state
     finance.js        borrowing, interest, and the emergency programme
     state.js          game construction, relations, serialisation
-    actions.js        the 34-order catalogue
+    actions.js        the 51-order catalogue
     effects.js        the shared "something happened to a country" vocabulary
     resolve.js        order → outcome tier → world changes
     opponents.js      how the other 55 countries decide their quarter
@@ -310,11 +362,13 @@ src/
     ko.js             the Korean language pack
   ui/
     theme.js          the theme + text-size registry
+    context.js        the framing that turns a bare figure into a position
+    keys.js           the keyboard table the handler and the help card share
     map.js            projection, zoom/pan camera, view modes, legends
     setup.js          new-game screen
     game.js           command screen: dashboard, inspector, feed, planner
     dom.js, store.js  helpers and persistence
-tests/                engine + AI-boundary tests
+tests/                engine, territory, AI-boundary, world and translation tests
 ```
 
 The simulation (`src/engine/`, `src/data/`) has no DOM dependency and runs under plain Node,

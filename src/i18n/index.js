@@ -53,10 +53,29 @@ export function t(key, fallback, vars) {
   return text;
 }
 
-/** Country name, adjective, government or one-line brief. */
+/**
+ * Country name, adjective, government or one-line brief.
+ *
+ * States invented mid-run cannot be in a language pack, so they carry their own
+ * translations under `i18n` on the definition sheet the game generated.
+ */
 export function tNation(def, field = 'name') {
   if (!def) return '';
-  return pack()?.nations?.[def.id]?.[field] ?? def[field] ?? '';
+  const packed = pack()?.nations?.[def.id]?.[field];
+  if (packed) return packed;
+  const generated = def.i18n?.[current]?.[field];
+  if (generated) return generated;
+  return def[field] ?? '';
+}
+
+/**
+ * A country's name in one specific language, regardless of which is active.
+ * Used when the game *generates* a country and has to store its name in every
+ * language at once, rather than looking one up for display.
+ */
+export function tNationIn(def, lang, field = 'name') {
+  if (!def) return '';
+  return PACKS[lang]?.nations?.[def.id]?.[field] ?? def.i18n?.[lang]?.[field] ?? def[field] ?? '';
 }
 
 /** Order name or blurb. */

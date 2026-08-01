@@ -12,7 +12,14 @@
 
 import { LANDMASSES, OCEANS } from '../data/geography.js';
 import { NATIONS_BY_ID } from '../data/nations.js';
-import { getRelation, livePower } from '../engine/state.js';
+import { blocsOf, defOf, getRelation, livePower } from '../engine/state.js';
+import {
+  allBorderSegments,
+  areaOf,
+  borderSegmentsFor,
+  holders,
+  runsFor,
+} from '../engine/territory.js';
 import { t, tNation } from '../i18n/index.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
@@ -61,6 +68,28 @@ function svg(tag, attrs = {}) {
   return el;
 }
 
+/**
+ * One merged run of cells as a rectangle. The hair of overlap on each side
+ * stops antialiasing from drawing pale seams between neighbouring runs of the
+ * same country.
+ */
+function runToPath(run) {
+  const [x1, y1] = project(run.north, run.west);
+  const [x2, y2] = project(run.south, run.east);
+  const p = 0.06;
+  return `M${(x1 - p).toFixed(2)},${(y1 - p).toFixed(2)}H${(x2 + p).toFixed(2)}V${(y2 + p).toFixed(2)}H${(x1 - p).toFixed(2)}Z`;
+}
+
+function segmentsToPath(segments) {
+  let d = '';
+  for (const [lon1, lat1, lon2, lat2] of segments) {
+    const [x1, y1] = project(lat1, lon1);
+    const [x2, y2] = project(lat2, lon2);
+    d += `M${x1.toFixed(1)},${y1.toFixed(1)}L${x2.toFixed(1)},${y2.toFixed(1)}`;
+  }
+  return d;
+}
+
 function ringToPath(ring) {
   return `${ring
     .map(([lon, lat], i) => {
@@ -70,10 +99,12 @@ function ringToPath(ring) {
     .join('')}Z`;
 }
 
-/** Which of the three alignment slots (or none) a country sits in. */
-export function alignmentOf(nationId) {
-  const def = NATIONS_BY_ID[nationId];
-  const blocs = def?.blocs || [];
+/**
+ * Which of the three alignment slots (or none) a country sits in.
+ * Pass the game to read live membership — countries change sides mid-run.
+ */
+export function alignmentOf(nationId, game = null) {
+  const blocs = game ? blocsOf(game, nationId) : NATIONS_BY_ID[nationId]?.blocs || [];
   for (const alignment of ALIGNMENTS) {
     if (alignment.blocs.some((b) => blocs.includes(b))) return alignment;
   }
@@ -95,6 +126,11 @@ export class WorldMap {
     this.camera = { zoom: 1, x: 0, y: 0 };
     this.game = null;
     this.nodeEls = new Map();
+    this.territoryEls = new Map();
+    this.showTerritory = true;
+    // Set while a pan is finishing, so releasing the mouse over a country does
+    // not also select it.
+    this.justPanned = false;
 
     this.root = svg('svg', {
       viewBox: `0 0 ${W} ${H}`,
@@ -117,6 +153,16 @@ export class WorldMap {
     for (const [nationId, el] of this.nodeEls) {
       el.classList.toggle('is-selected', nationId === id);
     }
+    for (const [nationId, el] of this.territoryEls) {
+      el.classList.toggle('is-selected', nationId === id);
+    }
+    this.#drawOutline();
+  }
+
+  /** Turn the filled-territory layer on or off. */
+  setShowTerritory(on) {
+    this.showTerritory = Boolean(on);
+    if (this.game) this.render(this.game);
   }
 
   /** Move the camera to a named region. */
@@ -132,12 +178,20 @@ export class WorldMap {
 
   /** Centre the camera on one country without changing zoom. */
   centreOn(nationId, zoom = null) {
-    const def = NATIONS_BY_ID[nationId];
+    const def = defOf(this.game, nationId);
     if (!def) return;
     if (zoom !== null) this.camera.zoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, zoom));
     const [x, y] = project(def.lat, def.lon);
     this.camera.x = W / 2 - x * this.camera.zoom;
     this.camera.y = H / 2 - y * this.camera.zoom;
+    this.#clampCamera();
+    this.#applyCamera();
+  }
+
+  /** Pan by a distance in map units — the keyboard's way to move the camera. */
+  panBy(dx, dy) {
+    this.camera.x += dx;
+    this.camera.y += dy;
     this.#clampCamera();
     this.#applyCamera();
   }
@@ -169,7 +223,9 @@ export class WorldMap {
 
     const scene = svg('g', { class: 'map-scene' });
     this.scene = scene;
-    scene.append(this.#graticule(), this.#land(), this.#oceanLabels());
+    scene.append(this.#graticule(), this.#land());
+    if (this.showTerritory) scene.append(this.#territories(game));
+    scene.append(this.#oceanLabels());
     scene.append(this.#links(game));
 
     const nodes = svg('g', { class: 'map-nodes' });
@@ -224,6 +280,59 @@ export class WorldMap {
     return g;
   }
 
+  /**
+   * The land each country actually holds, filled in that country's colour for
+   * the active view mode. This is the layer wars, coups and secessions move.
+   */
+  #territories(game) {
+    const g = svg('g', { class: 'map-territories' });
+    this.territoryEls = new Map();
+
+    for (const ownerId of holders(game)) {
+      const runs = runsFor(game, ownerId);
+      if (!runs.length) continue;
+      const { fill, opacity } = this.#encoding(game, ownerId);
+      const isPlayer = ownerId === game.playerId;
+      const path = svg('path', {
+        d: runs.map(runToPath).join(''),
+        class: `map-territory${isPlayer ? ' is-player' : ''}`,
+        style: `fill:${fill};fill-opacity:${(opacity * (isPlayer ? 0.82 : 0.6)).toFixed(2)}`,
+      });
+      path.dataset.nation = ownerId;
+      path.dataset.area = areaOf(game, ownerId).toFixed(0);
+      path.addEventListener('pointerenter', () => this.onHover?.(ownerId));
+      path.addEventListener('pointerleave', () => this.onHover?.(null));
+      path.addEventListener('click', (e) => {
+        if (this.justPanned) return;
+        e.stopPropagation();
+        this.onSelect?.(ownerId);
+      });
+      this.territoryEls.set(ownerId, path);
+      g.append(path);
+    }
+
+    // One deduplicated pass for every border on the map, then a heavier outline
+    // for whichever country you are looking at.
+    g.append(
+      svg('path', {
+        d: segmentsToPath(allBorderSegments(game)),
+        class: 'map-territory__edges',
+      }),
+    );
+    this.outlineEl = svg('path', { class: 'map-territory__outline' });
+    g.append(this.outlineEl);
+    this.#drawOutline();
+    return g;
+  }
+
+  /** Trace the country you are looking at, so "mine" is unmistakable. */
+  #drawOutline() {
+    if (!this.outlineEl || !this.game) return;
+    const id = this.selectedId || this.game.playerId;
+    this.outlineEl.setAttribute('d', id ? segmentsToPath(borderSegmentsFor(this.game, id)) : '');
+    this.outlineEl.classList.toggle('is-player', id === this.game.playerId);
+  }
+
   #oceanLabels() {
     const g = svg('g', { class: 'map-oceans' });
     for (const ocean of OCEANS) {
@@ -255,8 +364,9 @@ export class WorldMap {
   }
 
   #link(aId, bId, kind) {
-    const a = NATIONS_BY_ID[aId];
-    const b = NATIONS_BY_ID[bId];
+    const a = defOf(this.game, aId);
+    const b = defOf(this.game, bId);
+    if (!a || !b) return svg('path', { d: '', class: 'map-link' });
     const [x1, y1] = project(a.lat, a.lon);
     const [x2, y2] = project(b.lat, b.lon);
     const mx = (x1 + x2) / 2;
@@ -274,6 +384,8 @@ export class WorldMap {
   #encoding(game, id) {
     const state = game.nations[id];
     if (id === game.playerId) return { fill: 'var(--accent)', opacity: 1 };
+    // A breakaway can hold ground before it has a full sheet of statistics.
+    if (!state) return { fill: 'var(--dv-neutral)', opacity: 0.8 };
 
     switch (this.mode) {
       case 'power': {
@@ -285,7 +397,7 @@ export class WorldMap {
       case 'stability':
         return { fill: rampStep(state.stability / 100), opacity: 1 };
       case 'blocs': {
-        const alignment = alignmentOf(id);
+        const alignment = alignmentOf(id, game);
         return {
           fill: alignment ? `var(--dv-cat-${alignment.slot})` : 'var(--dv-neutral)',
           opacity: 1,
@@ -315,7 +427,7 @@ export class WorldMap {
   }
 
   #node(game, id, powerRatio) {
-    const def = NATIONS_BY_ID[id];
+    const def = defOf(game, id);
     const [x, y] = project(def.lat, def.lon);
     const isPlayer = id === game.playerId;
     const baseRadius = 5 + powerRatio * 10;
@@ -345,6 +457,7 @@ export class WorldMap {
     g.append(svg('circle', { r: baseRadius, class: 'map-node__dot', style: `fill:${fill};fill-opacity:${opacity}` }));
 
     g.addEventListener('click', (e) => {
+      if (this.justPanned) return;
       e.stopPropagation();
       this.onSelect?.(id);
     });
@@ -363,7 +476,7 @@ export class WorldMap {
   }
 
   #label(game, id, dataset) {
-    const def = NATIONS_BY_ID[id];
+    const def = defOf(game, id);
     const [x, y] = project(def.lat, def.lon);
     const text = svg('text', {
       x, y: y + Number(dataset.baseRadius) + 12,
@@ -394,6 +507,7 @@ export class WorldMap {
       if (e.button !== 0) return;
       dragging = true;
       moved = false;
+      this.justPanned = false;
       last = { x: e.clientX, y: e.clientY };
       this.root.classList.add('is-dragging');
     });
@@ -426,6 +540,7 @@ export class WorldMap {
     const endDrag = (e) => {
       if (!dragging) return;
       dragging = false;
+      this.justPanned = moved;
       this.root.classList.remove('is-dragging');
       try {
         this.root.releasePointerCapture(e.pointerId);
@@ -516,7 +631,8 @@ export class WorldMap {
     }
     for (const label of this.root.querySelectorAll('.map-labels text')) {
       const base = Number(label.dataset.baseRadius) || 6;
-      const def = NATIONS_BY_ID[label.dataset.labelFor];
+      const def = defOf(this.game, label.dataset.labelFor);
+      if (!def) continue;
       const [, y] = project(def.lat, def.lon);
       label.setAttribute('y', String(y + (base + 11) * inv));
       label.setAttribute('font-size', String(11 * inv));
@@ -542,7 +658,7 @@ function describeFor(game, id, mode) {
   switch (mode) {
     case 'power': return `Power ${Math.round(livePower(game, id))}`;
     case 'stability': return `Stability ${Math.round(state.stability)}`;
-    case 'blocs': return alignmentOf(id)?.name || 'Non-aligned';
+    case 'blocs': return alignmentOf(id, game)?.name || 'Non-aligned';
     case 'conflict':
       return game.wars.some((w) => w.active && (w.attackers.includes(id) || w.defenders.includes(id)))
         ? 'At war'

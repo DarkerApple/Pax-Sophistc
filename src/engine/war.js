@@ -10,9 +10,11 @@ import {
   adjustRelation,
   clamp,
   combatPower,
+  defOf,
   getRelation,
   logEvent,
 } from './state.js';
+import { areaOf, frontAnchor, setOwner, transferLand } from './territory.js';
 
 const HOME_GROUND_BONUS = 1.18;
 // Wars used to grind for twenty quarters. They now reach a verdict in roughly
@@ -44,6 +46,9 @@ export function declareWar(game, attackerId, defenderId, { rng, reason = 'unspec
     warScore: 6,
     exhaustion: { attackers: 0, defenders: 0 },
     casualties: 0,
+    // Ground currently under occupation: [cell, whose it was, who holds it].
+    // Kept on the war so a stalemate can hand every acre back.
+    occupied: [],
     reason,
     active: true,
     outcome: null,
@@ -136,6 +141,8 @@ export function tickWars(game, rng, mods) {
       }
     }
 
+    const advance = advanceFront(game, war, rng);
+
     const nuclearRisk = nuclearEscalationRisk(game, war, mods);
     if (nuclearRisk > 0 && rng.next() < nuclearRisk) {
       reports.push(detonate(game, war, rng));
@@ -155,15 +162,84 @@ export function tickWars(game, rng, mods) {
         type: 'war',
         warId: war.id,
         title: war.name,
-        text: frontLineSummary(war),
+        text: advance ? `${frontLineSummary(war)} ${advance.text}` : frontLineSummary(war),
         warScore: Math.round(war.warScore),
         casualties: war.casualties,
+        ground: advance || null,
       });
     }
   }
 
   game.wars = game.wars.filter((w) => w.active || game.turn - (w.endedTurn ?? 0) < 24);
   return reports;
+}
+
+/**
+ * Push the front. Whoever is ahead takes ground from whoever is behind, in
+ * proportion to how far ahead they are — so a war you are winning visibly
+ * eats into the map quarter by quarter instead of resolving in one jump.
+ */
+function advanceFront(game, war, rng) {
+  const lead = war.warScore;
+  if (Math.abs(lead) < 14) return null;
+
+  const gaining = lead > 0 ? war.attackers : war.defenders;
+  const yielding = lead > 0 ? war.defenders : war.attackers;
+  const gainer = gaining[0];
+  // Take from whichever opponent still holds the most — the war's centre of
+  // gravity, not whoever happens to be listed first.
+  const target = [...yielding].sort((a, b) => areaOf(game, b) - areaOf(game, a))[0];
+  if (!target || target === gainer) return null;
+
+  const pressure = (Math.abs(lead) - 14) / 86;
+  const held = areaOf(game, target) * 1000;
+  const wanted = held * pressure * 0.075 * rng.float(0.55, 1.35);
+  if (wanted < 5000) return null;
+
+  const anchor = frontAnchor(game, target, gainer);
+  const moved = transferLand(game, target, gainer, wanted, anchor);
+  if (!moved.cells.length) return null;
+
+  if (!war.occupied) war.occupied = [];
+  war.occupied.push(...moved.cells.map((slot) => [slot, target, gainer]));
+
+  const gainerName = tNation(defOf(game, gainer));
+  const targetName = tNation(defOf(game, target));
+  return {
+    from: target,
+    to: gainer,
+    area: Math.round(moved.area),
+    text: t('war.groundTaken', '{a} forces now occupy roughly {n},000 km² of {b} territory.', {
+      a: gainerName,
+      b: targetName,
+      n: Math.round(moved.area),
+    }),
+  };
+}
+
+/**
+ * What the peace does with occupied ground.
+ * A decisive win keeps most of it; anything less hands it all back.
+ */
+function settleOccupation(game, war, rng, decisive, winners) {
+  if (!war.occupied?.length) return { annexed: 0, returned: 0 };
+  const keep = decisive && winners.length ? rng.float(0.55, 0.9) : 0;
+  let annexed = 0;
+  let returned = 0;
+  const returning = [];
+
+  for (const [slot, original, holder] of war.occupied) {
+    const wonIt = winners.includes(holder);
+    if (wonIt && rng.next() < keep) {
+      annexed += 1;
+      continue;
+    }
+    returning.push([slot, original]);
+    returned += 1;
+  }
+  for (const [slot, original] of returning) setOwner(game, [slot], original);
+  war.occupied = [];
+  return { annexed, returned };
 }
 
 function frontLineSummary(war) {
@@ -245,6 +321,8 @@ export function concludeWar(game, war, rng, kind = 'decisive') {
 
   const decisive = Math.abs(war.warScore) >= DECISIVE_SCORE;
   const weight = decisive ? 1.6 : 1;
+  const ground = settleOccupation(game, war, rng, decisive && kind !== 'nuclear', winners);
+  war.annexedCells = ground.annexed;
 
   for (const id of winners) {
     const state = game.nations[id];
@@ -315,6 +393,19 @@ export function concludeWar(game, war, rng, kind = 'decisive') {
             { war: war.name, winner: tNation(NATIONS_BY_ID[winners[0]]), quarters, casualties: (war.casualties / 1000).toFixed(0) })
         : t('war.endStalemate', '{war} ends in exhausted stalemate after {quarters} quarters.', { war: war.name, quarters });
 
-  logEvent(game, { type: 'war', severity: 'major', text: summary, nations: [...war.attackers, ...war.defenders] });
-  return { type: 'war-end', warId: war.id, title: 'War Ends', text: summary, outcome: war.outcome };
+  const borders = ground.annexed
+    ? ` ${t('war.endAnnex', 'The peace redraws the border: {n} occupied districts stay with the victors.', { n: ground.annexed })}`
+    : ground.returned
+      ? ` ${t('war.endWithdraw', 'Every occupied district is handed back.')}`
+      : '';
+
+  logEvent(game, { type: 'war', severity: 'major', text: summary + borders, nations: [...war.attackers, ...war.defenders] });
+  return {
+    type: 'war-end',
+    warId: war.id,
+    title: 'War Ends',
+    text: summary + borders,
+    outcome: war.outcome,
+    annexed: ground.annexed,
+  };
 }

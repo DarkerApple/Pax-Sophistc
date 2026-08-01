@@ -19,6 +19,12 @@ import {
 } from '../src/engine/worldmodes.js';
 import { THEMES, THEMES_BY_ID, UI_SCALES } from '../src/ui/theme.js';
 import { VIEW_MODES, alignmentOf, legendFor, project } from '../src/ui/map.js';
+import {
+  DEFAULT_SCENARIO,
+  hasScenario,
+  registerScenario,
+  scenarioOf,
+} from '../src/data/scenarios.js';
 import { describeEffects } from '../src/ui/game.js';
 import { ACTIONS } from '../src/engine/actions.js';
 
@@ -336,4 +342,55 @@ test('both data palettes define every visualisation token', () => {
   for (const token of ['--st-good', '--st-warning', '--st-serious', '--st-critical']) {
     assert.ok(css.includes(`${token}:`), `missing reserved status token ${token}`);
   }
+});
+
+// ── Scenarios ───────────────────────────────────────────────────────────────
+
+test('the current world is registered as a scenario and is the default', () => {
+  assert.ok(hasScenario(DEFAULT_SCENARIO));
+  const world = scenarioOf(DEFAULT_SCENARIO);
+  assert.equal(world.startYear, 2026);
+  assert.equal(world.nations.length, NATIONS.length);
+  assert.ok(world.anchors.length > 0, 'the current world needs its historical anchors');
+});
+
+test('an unknown scenario falls back rather than throwing', () => {
+  assert.equal(scenarioOf('bronze-age').id, DEFAULT_SCENARIO);
+});
+
+test('a scenario pack can add a whole different era without touching the engine', () => {
+  // This is the shape an old-world mode will arrive in.
+  registerScenario({
+    id: 'test-era',
+    name: 'Test Era',
+    startYear: 1450,
+    nations: [
+      {
+        id: 'test-a', name: 'Aland', adjective: 'Alandic', flag: '🏳', lat: 50, lon: 10,
+        region: 'western-europe', government: 'Monarchy', leaderTitle: 'King',
+        area: 400, population: 4, gdp: 0.02, growth: 0.2, military: 30, readiness: 50,
+        tech: 20, stability: 55, influence: 20, unrest: 30, nukes: 0, blocs: [],
+        doctrine: 'fortress', tags: [], brief: 'A test polity.',
+      },
+      {
+        id: 'test-b', name: 'Bland', adjective: 'Blandic', flag: '🏳', lat: 45, lon: 5,
+        region: 'western-europe', government: 'Republic', leaderTitle: 'Doge',
+        area: 200, population: 2, gdp: 0.03, growth: 0.3, military: 20, readiness: 60,
+        tech: 25, stability: 60, influence: 25, unrest: 20, nukes: 0, blocs: [],
+        doctrine: 'trader', tags: [], brief: 'Another test polity.',
+      },
+    ],
+    anchors: [['test-a', 'test-b', -40]],
+  });
+
+  const game = createGame({ playerNationId: 'test-a', scenario: 'test-era', seed: 'era' });
+  assert.equal(game.scenario, 'test-era');
+  assert.equal(game.year, 1450);
+  assert.deepEqual(Object.keys(game.nations).sort(), ['test-a', 'test-b']);
+  assert.equal(getRelation(game, 'test-a', 'test-b'), -40, 'the pack\'s anchors must be used');
+
+  // And the whole quarter runs against it — this is the point of the seam.
+  const report = advanceTurn(game, { orders: [{ actionId: 'stimulus' }] });
+  assert.equal(report.turn, 1);
+  assert.equal(game.status, 'active');
 });

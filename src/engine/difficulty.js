@@ -2,6 +2,8 @@
 // reads its modifiers from here, so one drag of the slider retunes the whole
 // simulation rather than just scaling one number.
 
+import { t } from '../i18n/index.js';
+
 export const DIFFICULTY_MIN = 1;
 export const DIFFICULTY_MAX = 10;
 
@@ -79,11 +81,11 @@ export function difficultyPreview(difficulty) {
   const times = (v) => `×${v.toFixed(2)}`;
   const pts = (v) => `${v >= 0 ? '+' : '−'}${Math.abs(Math.round(v))}`;
   return [
-    `Revenue ${times(m.budgetMultiplier / base.budgetMultiplier)}`,
-    `Growth ${times(m.growthMultiplier / base.growthMultiplier)}`,
-    `Action success ${pts(-m.successPenalty * 100)} pts`,
-    `Rival aggression ${times(m.aiAggression / base.aiAggression)}`,
-    `Crisis severity ${times(m.eventSeverity / base.eventSeverity)}`,
-    `Political capital ${pts(m.politicalCapitalBonus - base.politicalCapitalBonus)}`,
+    `${t('preview.revenue', 'Revenue')} ${times(m.budgetMultiplier / base.budgetMultiplier)}`,
+    `${t('preview.growth', 'Growth')} ${times(m.growthMultiplier / base.growthMultiplier)}`,
+    `${t('preview.actionSuccess', 'Action success')} ${pts(-m.successPenalty * 100)} ${t('preview.pts', 'pts')}`,
+    `${t('preview.rivalAggression', 'Rival aggression')} ${times(m.aiAggression / base.aiAggression)}`,
+    `${t('preview.crisisSeverity', 'Crisis severity')} ${times(m.eventSeverity / base.eventSeverity)}`,
+    `${t('preview.politicalCapital', 'Political capital')} ${pts(m.politicalCapitalBonus - base.politicalCapitalBonus)}`,
   ];
 }

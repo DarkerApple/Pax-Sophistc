@@ -2,6 +2,8 @@
 // hard it pushes back. They compose — Chaotic at difficulty 2 is a wild but
 // survivable ride, Chaotic at 10 is a shredder.
 
+import { t } from '../i18n/index.js';
+
 import { difficultyModifiers } from './difficulty.js';
 
 export const WORLD_MODES = [
@@ -104,9 +106,9 @@ export function modePreview(modeId) {
   const knobs = worldMode(modeId).knobs;
   const times = (v) => `×${v.toFixed(2).replace(/\.00$/, '')}`;
   return [
-    `Crisis frequency ${times(knobs.eventFrequency)}`,
-    `Crisis severity ${times(knobs.eventSeverity)}`,
-    `War risk ${times(knobs.warChance)}`,
-    `Relation swings ${times(knobs.relationVolatility)}`,
+    `${t('preview.crisisFrequency', 'Crisis frequency')} ${times(knobs.eventFrequency)}`,
+    `${t('preview.crisisSeverity', 'Crisis severity')} ${times(knobs.eventSeverity)}`,
+    `${t('preview.warRisk', 'War risk')} ${times(knobs.warChance)}`,
+    `${t('preview.relationSwings', 'Relation swings')} ${times(knobs.relationVolatility)}`,
   ];
 }

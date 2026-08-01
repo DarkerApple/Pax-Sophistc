@@ -6,17 +6,30 @@ import { successChance } from '../engine/resolve.js';
 import {
   activeWarsFor,
   dateLabel,
+  defOf,
   getRelation,
   livePower,
   rankedNations,
 } from '../engine/state.js';
+import {
+  bandOf,
+  deltaLabel,
+  gripOn,
+  formatArea,
+  formatPerCapita,
+  powerContext,
+  rankLabel,
+  rankOf,
+  statContext,
+} from './context.js';
 import { scoreRun } from '../engine/turn.js';
 import { LADDER_MAX, playerLadders } from '../engine/consequences.js';
 import { availableFunds, creditLimit, debtOf, describeFinances } from '../engine/finance.js';
 import { gameModifiers } from '../engine/worldmodes.js';
 import { h, money, mount, relationColour, relationLabel, statColour } from './dom.js';
 import { MAP_FOCUSES, VIEW_MODES, WorldMap, alignmentOf, legendFor } from './map.js';
-import { t, tAction, tLabel, tModifier, tNation } from '../i18n/index.js';
+import { KEY_GROUPS, groupLabel, keyLabel, keybindsIn } from './keys.js';
+import { LANGUAGES, currentLanguage, t, tAction, tLabel, tModifier, tNation } from '../i18n/index.js';
 
 const STAT_ROWS = [
   { key: 'stability', label: 'Stability', hint: 'How well your institutions hold. At zero your government falls.' },
@@ -56,6 +69,7 @@ export class GameScreen {
     this.advisorBusy = false;
     this.busy = false;
     this.mapMode = 'relations';
+    this.showTerritory = true;
     this.hoverId = null;
     this.pinnedId = null;
     this.helpOpen = false;
@@ -112,6 +126,7 @@ export class GameScreen {
         onViewChange: () => this.#syncZoomLabel(),
       });
       this.map.mode = this.mapMode;
+      this.map.showTerritory = this.showTerritory;
       if (camera) this.map.camera = camera;
       this.map.render(game);
       this.map.setSelected(this.pinnedId);
@@ -151,15 +166,58 @@ export class GameScreen {
       h('div.topbar__metrics',
         metric(t('hud.date', 'Date'), dateLabel(game), t('hud.dateHint', 'Quarter {turn} of {total}', { turn: game.turn, total: game.totalTurns })),
         state.treasury >= 0
-          ? metric(t('hud.treasury', 'Treasury'), money(state.treasury), t('hud.treasuryHint', 'Cash in hand. You can also borrow against your credit line.'))
-          : metric(t('hud.debt', 'Debt'), money(-state.treasury), `${describeFinances(state).label}. ${describeFinances(state).detail}`, 'var(--bad)'),
+          ? metric(
+              t('hud.treasury', 'Treasury'),
+              money(state.treasury),
+              t('hud.treasuryHint', 'Cash in hand. You can also borrow against your credit line.'),
+              null,
+              t('hud.pctOfGdp', '{pct}% of GDP', { pct: ((state.treasury / (state.gdp * 1000)) * 100).toFixed(0) }),
+            )
+          : metric(
+              t('hud.debt', 'Debt'),
+              money(-state.treasury),
+              `${describeFinances(state).label}. ${describeFinances(state).detail}`,
+              'var(--bad)',
+              t('hud.pctOfGdp', '{pct}% of GDP', { pct: ((-state.treasury / (state.gdp * 1000)) * 100).toFixed(0) }),
+            ),
         metric(t('hud.canSpend', 'Can spend'), money(availableFunds(state)), t('hud.spendHint', 'Cash plus your remaining credit line')),
         metric(t('hud.politicalCapital', 'Political capital'), `${game.politicalCapital}`, t('hud.pcHint', 'Every order costs some. It refills each quarter.')),
-        metric(t('hud.gdp', 'GDP'), `$${state.gdp.toFixed(2)}T`, t('hud.gdpHint', 'Your economy, annualised')),
-        metric(t('hud.worldTension', 'World tension'), `${Math.round(game.worldTension)}`, t('hud.tensionHint', 'How close the world is to a general crisis'), statColour(game.worldTension, true)),
-        metric(t('hud.standing', 'Standing'), `${score.total} (${score.grade})`, t('hud.standingHint', 'Your run graded as it stands right now')),
+        metric(
+          t('hud.gdp', 'GDP'),
+          `$${state.gdp.toFixed(2)}T`,
+          t('hud.gdpHint', 'Your economy, annualised'),
+          null,
+          `${formatPerCapita(state)}/head · ${rankLabel(game, rankOf(game, game.playerId, (s) => s.gdp))}`,
+        ),
+        metric(
+          t('hud.worldTension', 'World tension'),
+          `${Math.round(game.worldTension)}`,
+          t('hud.tensionHint', 'How close the world is to a general crisis'),
+          statColour(game.worldTension, true),
+          bandOf('tension', game.worldTension),
+        ),
+        metric(
+          t('hud.standing', 'Standing'),
+          `${score.total} (${score.grade})`,
+          t('hud.standingHint', 'Your run graded as it stands right now'),
+          null,
+          (() => {
+            const power = powerContext(game, game.playerId);
+            return t('hud.powerRank', 'power {n} of {total}', { n: power.rank, total: power.total });
+          })(),
+        ),
       ),
       h('div.topbar__actions',
+        // Language is one click away mid-game, not buried in Settings.
+        h('div.langswitch.langswitch--sm', { role: 'group', 'aria-label': t('setup.language', 'Language') },
+          LANGUAGES.map((lang) =>
+            h('button.langswitch__btn', {
+              class: currentLanguage() === lang.id ? 'langswitch__btn is-active' : 'langswitch__btn',
+              'aria-pressed': String(currentLanguage() === lang.id),
+              onclick: () => this.app.setLanguage(lang.id),
+            }, lang.native),
+          ),
+        ),
         h('button.btn.btn--ghost.btn--sm', { onclick: () => { this.helpOpen = true; this.render(); }, title: 'How to play (?)' }, t('hud.howToPlay', 'How to play')),
         h('button.btn.btn--ghost.btn--sm', { onclick: () => this.app.openSettings() }, t('hud.settings', 'Settings')),
         h('button.btn.btn--ghost.btn--sm', { onclick: () => this.app.saveNow() }, t('hud.save', 'Save')),
@@ -173,11 +231,32 @@ export class GameScreen {
   #dashboard() {
     const state = this.game.nations[this.game.playerId];
     const wars = activeWarsFor(this.game, this.game.playerId);
-    const previous = state.history?.[state.history.length - 2];
+
+    const grip = gripOn(this.game, playerLadders(this.game), wars);
 
     return h('section.panel',
       h('h2.panel__title', t('panel.nation', 'The state of the nation')),
-      h('div.stats', STAT_ROWS.map((row) => this.#statBar(row, state[row.key], previous))),
+      // How much of this quarter is actually yours to shape, and what is
+      // already moving without you.
+      h('div.grip', { title: t('grip.hint', 'Political capital, public consent, institutional capacity and money, minus everything already running without you.') },
+        h('div.grip__head',
+          h('span.grip__label', t('grip.title', 'Your grip')),
+          h('span.grip__value', `${grip.value}`),
+        ),
+        h('div.stat__track',
+          h('div.stat__fill', { style: { width: `${grip.value}%`, background: statColour(grip.value) } }),
+        ),
+        h('div.grip__band', grip.band),
+        grip.pressures.length
+          ? h('div.grip__pressures',
+              h('span.grip__pressuresLabel',
+                t('grip.running', '{n} running without you:', { n: grip.pressures.length })),
+              grip.pressures.slice(0, 4).map((p) => h('span.grip__chip', p.label)),
+            )
+          : h('div.grip__pressures',
+              h('span.grip__pressuresLabel', t('grip.clear', 'Nothing is running without you this quarter.'))),
+      ),
+      h('div.stats', STAT_ROWS.map((row) => this.#statBar(row))),
       state.modifiers.length
         ? h('div.modifiers',
             h('h3.subhead', t('panel.inEffect', 'In effect')),
@@ -216,20 +295,31 @@ export class GameScreen {
     );
   }
 
-  #statBar(row, value, previous) {
-    const v = Math.round(value);
-    const delta = previous && row.key in previous ? v - Math.round(previous[row.key]) : 0;
+  #statBar(row) {
+    const game = this.game;
+    const ctx = statContext(game, game.playerId, row.key);
+    const v = ctx.value;
+    // A bare 0-100 figure means nothing on its own, so every row carries which
+    // way it moved, where that puts you in the world, and a word for it.
+    const good = row.invert ? -1 : 1;
     return h('div.stat', { title: row.hintOf() },
       h('div.stat__head',
         h('span.stat__label', row.labelOf()),
         h('span',
           h('span.stat__value', String(v)),
-          delta ? h('span.stat__delta', { class: `stat__delta stat__delta--${delta > 0 ? 'up' : 'down'}` },
-            ` ${delta > 0 ? '▲' : '▼'}${Math.abs(delta)}`) : null,
+          ctx.delta
+            ? h('span.stat__delta', {
+                class: `stat__delta stat__delta--${ctx.delta * good > 0 ? 'up' : 'down'}`,
+              }, ` ${ctx.delta > 0 ? '▲' : '▼'}${Math.abs(Math.round(ctx.delta))}`)
+            : null,
         ),
       ),
       h('div.stat__track',
         h('div.stat__fill', { style: { width: `${v}%`, background: statColour(v, row.invert) } }),
+      ),
+      h('div.stat__context',
+        h('span', ctx.band),
+        h('span.stat__rank', rankLabel(game, ctx.rank)),
       ),
     );
   }
@@ -255,7 +345,7 @@ export class GameScreen {
     }
 
     const game = this.game;
-    const def = NATIONS_BY_ID[id];
+    const def = defOf(game, id);
     const state = game.nations[id];
     const isPlayer = id === game.playerId;
     const relation = getRelation(game, game.playerId, id);
@@ -278,17 +368,20 @@ export class GameScreen {
       atWar ? h('div.inspector__relation', { style: { color: 'var(--st-critical)' } }, t('inspector.atWar', '⚔ At war')) : null,
       h('p.inspector__brief', tNation(def, 'brief')),
       h('div.inspector__grid',
-        row(t('stat.gdp', 'GDP'), `$${state.gdp.toFixed(2)}T`),
-        row(t('stat.people', 'People'), `${Math.round(state.population)}M`),
-        row(t('stat.military', 'Military'), Math.round(state.military)),
-        row(t('stat.readiness', 'Readiness'), Math.round(state.readiness)),
-        row(t('stat.tech', 'Technology'), Math.round(state.tech)),
-        row(t('stat.stability', 'Stability'), Math.round(state.stability)),
-        row(t('stat.unrest', 'Unrest'), Math.round(state.unrest)),
-        row(t('stat.influence', 'Influence'), Math.round(state.influence)),
-        row(t('stat.nukes', 'Warheads'), state.nukes || '—'),
+        row(t('stat.gdp', 'GDP'), `$${state.gdp.toFixed(2)}T`, `${formatPerCapita(state)}/head`),
+        row(t('stat.people', 'People'), `${Math.round(state.population)}M`,
+          rankLabel(game, rankOf(game, id, (s) => s.population))),
+        row(t('stat.military', 'Military'), Math.round(state.military), bandOf('military', state.military)),
+        row(t('stat.readiness', 'Readiness'), Math.round(state.readiness), bandOf('readiness', state.readiness)),
+        row(t('stat.tech', 'Technology'), Math.round(state.tech), bandOf('tech', state.tech)),
+        row(t('stat.stability', 'Stability'), Math.round(state.stability), bandOf('stability', state.stability)),
+        row(t('stat.unrest', 'Unrest'), Math.round(state.unrest), bandOf('unrest', state.unrest)),
+        row(t('stat.influence', 'Influence'), Math.round(state.influence), bandOf('influence', state.influence)),
+        row(t('stat.nukes', 'Warheads'), state.nukes || '—',
+          state.nukes ? rankLabel(game, rankOf(game, id, (s) => s.nukes)) : ''),
+        landRow(game, id),
         row(t('stat.alignment', 'Alignment'),
-          alignmentOf(id) ? t(alignmentOf(id).labelKey, alignmentOf(id).name) : t('legend.nonAligned', 'Non-aligned')),
+          alignmentOf(id, game) ? t(alignmentOf(id, game).labelKey, alignmentOf(id, game).name) : t('legend.nonAligned', 'Non-aligned')),
       ),
       h('div.inspector__actions',
         h('button.btn.btn--sm.btn--ghost', { onclick: () => { this.map?.centreOn(id, Math.max(3, this.map.zoom)); } }, t('inspector.zoomTo', 'Zoom to')),
@@ -296,8 +389,30 @@ export class GameScreen {
       ),
     );
 
-    function row(label, value) {
-      return h('div.inspector__row', h('span', label), h('span', String(value)));
+    function row(label, value, context) {
+      return h('div.inspector__row',
+        h('span', label),
+        h('span',
+          String(value),
+          context ? h('span.inspector__context', context) : null,
+        ),
+      );
+    }
+
+    // Land is the one figure that can move without any statistic changing, so
+    // it always shows how far it has drifted from where the run started.
+    function landRow(g, nationId) {
+      const land = formatArea(g, nationId);
+      return row(
+        t('stat.land', 'Land held'),
+        land.text,
+        land.change === null
+          ? ''
+          : t('context.sinceStart', '{delta}% since {date}', {
+              delta: deltaLabel(land.change),
+              date: `Q1 ${g.year - Math.floor(g.turn / 4)}`,
+            }),
+      );
     }
   }
 
@@ -414,6 +529,15 @@ export class GameScreen {
           ),
         ),
         h('div.map-toolbar__spacer'),
+        h('button.chip', {
+          class: this.showTerritory ? 'chip is-active' : 'chip',
+          title: t('map.territoryHint', 'Fill in the land each country holds.'),
+          onclick: () => {
+            this.showTerritory = !this.showTerritory;
+            this.map?.setShowTerritory(this.showTerritory);
+            this.render();
+          },
+        }, t('map.territory', 'Territory')),
         h('select.input', {
           style: { width: 'auto' },
           'aria-label': 'Jump to region',
@@ -956,14 +1080,27 @@ export class GameScreen {
             'Your mandate is set on day one and graded at the end across the economy, domestic order, standing, security and world stability. If stability hits zero, your government falls and the run is over.')),
         ),
         h('div.help__section',
+          h('h3', t('help.territoryTitle', 'Territory')),
+          h('p', t('help.territoryBody',
+            'The filled colours are the land each country actually holds. Wars move the front quarter by quarter, decisive peaces redraw the border, and a country that comes apart leaves a new state on the map with a new name and its own statistics. Your own territory is outlined; press T to turn the fill off.')),
+        ),
+        h('div.help__section',
+          h('h3', t('help.controlTitle', 'What you control')),
+          h('p', t('help.controlBody',
+            'Your grip on the left panel is a reading of how much of the quarter is actually yours to shape: political capital, approval, stability, and how many crises are running without you. When it is high, your orders mostly land. When it is low, the world is setting the agenda and you are answering it.')),
+        ),
+        h('div.help__section',
           h('h3', t('help.keyboard', 'Keyboard')),
-          h('div.help__keys',
-            h('kbd', 'Enter'), h('span', t('help.keyEnd', 'End the quarter')),
-            h('kbd', '1–7'), h('span', t('help.keyCategory', 'Switch order category')),
-            h('kbd', '+ / −'), h('span', t('help.keyZoom', 'Zoom the map')),
-            h('kbd', '0'), h('span', t('help.keyReset', 'Reset the map view')),
-            h('kbd', '?'), h('span', t('help.keyHelp', 'Open this help')),
-            h('kbd', 'Esc'), h('span', t('help.keyEsc', 'Close whatever is open')),
+          KEY_GROUPS.map((group) =>
+            h('div',
+              h('h4.help__keygroup', groupLabel(group)),
+              h('div.help__keys',
+                keybindsIn(group.id).flatMap((bind) => [
+                  h('span.help__keycombo', bind.keys.map((k) => h('kbd', k))),
+                  h('span', keyLabel(bind)),
+                ]),
+              ),
+            ),
           ),
         ),
         h('div.row.row--end',
@@ -1135,10 +1272,12 @@ function fmt(value, digits = 0) {
   return `${value > 0 ? '+' : '−'}${Math.abs(Number(rounded))}`;
 }
 
-function metric(label, value, hint, colour) {
+function metric(label, value, hint, colour, context) {
   return h('div.metric', { title: hint },
     h('span.metric__label', label),
     h('span.metric__value', { style: colour ? { color: colour } : null }, value),
+    // The line that turns a figure into a position: per-head, per-GDP, or rank.
+    context ? h('span.metric__context', context) : null,
   );
 }
 

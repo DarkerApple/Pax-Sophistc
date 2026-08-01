@@ -658,6 +658,32 @@ textarea.input { resize: vertical; font-family: inherit; }
   vector-effect: non-scaling-stroke;
 }
 
+/* Territory: the ground each country actually holds. */
+.map-territory {
+  cursor: pointer;
+  stroke: none;
+  transition: fill-opacity 0.15s;
+}
+.map-territory:hover { fill-opacity: 0.9 !important; }
+.map-territory.is-selected { fill-opacity: 0.95 !important; }
+.map-territory__edges {
+  fill: none;
+  stroke: var(--map-surface);
+  stroke-width: 1;
+  opacity: 0.85;
+  pointer-events: none;
+  vector-effect: non-scaling-stroke;
+}
+.map-territory__outline {
+  fill: none;
+  stroke: var(--ink);
+  stroke-width: 2;
+  stroke-linecap: square;
+  pointer-events: none;
+  vector-effect: non-scaling-stroke;
+}
+.map-territory__outline.is-player { stroke: var(--accent); stroke-width: 2.4; }
+
 .map-oceans text {
   fill: var(--map-ink);
   opacity: 0.5;
@@ -941,7 +967,7 @@ kbd {
   .game__body { grid-template-columns: 1fr; overflow: visible; }
   .col { overflow: visible; min-height: 0; }
   .setup__grid { grid-template-columns: 1fr; }
-  .country-grid { max-height: none; }
+  .country-grid { max-height: 65vh; }
   .topbar__metrics { flex-wrap: nowrap; overflow-x: auto; gap: 1.1rem; padding-bottom: 0.15rem; }
   .metric { flex: 0 0 auto; }
 }
@@ -975,3 +1001,132 @@ kbd {
   .map-node__dot, .map-land__shape { forced-color-adjust: none; }
   .btn, .panel, .action { border-color: CanvasText; }
 }
+
+/* Figures with context: the small line that turns a number into a position. */
+.stat__context {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-top: 0.15rem;
+  font-size: 0.72em;
+  color: var(--muted);
+}
+.stat__rank { font-family: var(--mono); opacity: 0.8; }
+.metric__context {
+  display: block;
+  font-size: 0.7em;
+  color: var(--muted);
+  margin-top: 0.1rem;
+  white-space: nowrap;
+}
+.inspector__context {
+  display: block;
+  font-size: 0.78em;
+  color: var(--muted);
+  font-weight: 400;
+}
+
+/* Your grip: how much of the quarter is actually yours to shape. */
+.grip {
+  padding: 0.6rem 0.7rem;
+  margin-bottom: 0.9rem;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+}
+.grip__head { display: flex; align-items: baseline; justify-content: space-between; }
+.grip__label {
+  font-size: 0.7rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted);
+}
+.grip__value { font-family: var(--display); font-size: 1.35rem; }
+.grip__band { font-size: 0.8rem; color: var(--muted); margin-top: 0.25rem; }
+.grip__pressures {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 0.3rem; margin-top: 0.45rem;
+}
+.grip__pressuresLabel { font-size: 0.72rem; color: var(--muted-2); }
+.grip__chip {
+  font-size: 0.7rem;
+  padding: 0.05rem 0.4rem;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  color: var(--muted);
+}
+
+.help__keygroup {
+  font-size: 0.72rem; letter-spacing: 0.1em; text-transform: uppercase;
+  color: var(--muted); margin: 0.8rem 0 0.35rem;
+}
+.help__keycombo { display: inline-flex; gap: 0.2rem; }
+
+/* ── Setup: header language switch and folding sidebar panels ─────────────── */
+
+.hero__body { flex: 1; min-width: 0; }
+.langswitch {
+  display: inline-flex;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  overflow: hidden;
+  flex: 0 0 auto;
+  align-self: flex-start;
+}
+.langswitch__btn {
+  background: transparent;
+  border: 0;
+  color: var(--muted);
+  padding: 0.4rem 0.95rem;
+  cursor: pointer;
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+.langswitch__btn:hover { color: var(--ink); background: var(--panel-2); }
+.langswitch__btn.is-active { background: var(--accent); color: var(--accent-ink); }
+
+.panel--fold { padding: 0; }
+.panel__fold {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.85rem 1rem;
+  cursor: pointer;
+  list-style: none;
+}
+.panel__fold::-webkit-details-marker { display: none; }
+.panel__fold .panel__title { margin-bottom: 0; }
+.panel__fold::after {
+  content: '▾';
+  color: var(--muted);
+  transition: transform 0.15s;
+}
+.panel--fold[open] .panel__fold::after { transform: rotate(180deg); }
+.panel__foldValue {
+  font-size: 0.78rem;
+  color: var(--muted);
+  margin-left: auto;
+  text-align: right;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 55%;
+}
+.panel__foldBody { padding: 0 1rem 1rem; }
+
+/* The sidebar scrolls with the page but never makes the page taller than the
+   country list does. */
+@media (min-width: 1100px) {
+  .setup__side {
+    position: sticky;
+    top: 1rem;
+    max-height: calc(100vh - 2rem);
+    overflow-y: auto;
+    padding-right: 0.35rem;
+  }
+  .country-grid { max-height: calc(100vh - 20rem); min-height: 26rem; }
+}
+.panel--start {
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
+  box-shadow: 0 -14px 20px -8px var(--bg);
+}
+.langswitch--sm .langswitch__btn { padding: 0.25rem 0.6rem; font-size: 0.78rem; }

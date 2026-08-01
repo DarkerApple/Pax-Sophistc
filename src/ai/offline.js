@@ -6,11 +6,12 @@
 // rather than atmosphere. It will never be as varied as a model, but it should
 // never be vaguer.
 
-import { NATIONS, NATIONS_BY_ID } from '../data/nations.js';
+import { BLOCS, NATIONS, NATIONS_BY_ID } from '../data/nations.js';
 import { ACTIONS, ACTIONS_BY_ID } from '../engine/actions.js';
 import { describeChanges } from '../engine/effects.js';
 import { playerLadders } from '../engine/consequences.js';
-import { activeWarsFor, dateLabel, getRelation } from '../engine/state.js';
+import { activeWarsFor, dateLabel, defOf, getRelation } from '../engine/state.js';
+import { areaOf, startingAreaOf } from '../engine/territory.js';
 import { gameModifiers } from '../engine/worldmodes.js';
 import { t, tAction, tIn, tModifier, tNation } from '../i18n/index.js';
 
@@ -50,6 +51,47 @@ function joinList(items) {
   return `${items.slice(0, -1).join(', ')}, ${and} ${items[items.length - 1]}`;
 }
 
+/**
+ * Openers for each section, rotated by quarter. The local narrator will never
+ * be as varied as a model, but it should not read like the same memo forty
+ * times in a row either.
+ */
+/**
+ * Openers for each section, rotated by quarter. The local narrator will never
+ * be as varied as a model, but it should not read like the same memo forty
+ * times in a row either.
+ */
+const OPENERS = {
+  world: [
+    ['elsewhere', 'Elsewhere:'],
+    ['beyond', 'Beyond your borders:'],
+    ['wires', 'On the wires this quarter:'],
+    ['board', 'The rest of the board moved too:'],
+    ['awayDesk', 'Away from your desk:'],
+    ['wider', 'In the wider world:'],
+  ],
+  domestic: [
+    ['home', 'At home,'],
+    ['domestically', 'Domestically,'],
+    ['inside', 'Inside the country,'],
+    ['homeFront', 'On the home front,'],
+    ['capital', 'In your own capital,'],
+    ['frontPage', 'Behind the front page,'],
+  ],
+  map: [
+    ['changed', 'The map itself changed:'],
+    ['moved', 'Borders moved this quarter:'],
+    ['ground', 'On the ground:'],
+    ['shifted', 'The territorial position shifted:'],
+    ['lines', 'Where the lines run now:'],
+  ],
+};
+
+const opener = (kind, turn) => {
+  const [id, english] = pick(OPENERS[kind], turn * 7 + kind.length);
+  return t(`opener.${kind}.${id}`, english);
+};
+
 // ── The quarterly briefing ──────────────────────────────────────────────────
 
 export function offlineBriefing(game, report) {
@@ -65,7 +107,7 @@ export function offlineBriefing(game, report) {
 
   paragraphs.push(economyParagraph(game, report, state));
 
-  const domestic = domesticParagraph(game, state);
+  const domestic = domesticParagraph(game, state, report.turn);
   if (domestic) paragraphs.push(domestic);
 
   const world = worldParagraph(game, report);
@@ -74,9 +116,22 @@ export function offlineBriefing(game, report) {
   const war = warParagraph(game, report);
   if (war) paragraphs.push(war);
 
+  const borders = borderParagraph(game, report);
+  if (borders) paragraphs.push(borders);
+
+  const neighbourhood = neighbourhoodParagraph(game, report);
+  if (neighbourhood) paragraphs.push(neighbourhood);
+
   // Dispatches: one per concrete thing that happened, attributed to a desk.
-  for (const e of report.events.slice(0, 2)) {
-    dispatches.push({ source: pick(OUTLETS, e.title.length + report.turn), text: e.text });
+  // An event that has an explanation carries it, because "why" is most of what
+  // a desk is for.
+  for (const e of report.events.slice(0, 3)) {
+    dispatches.push({
+      source: pick(OUTLETS, e.title.length + report.turn),
+      text: e.cause
+        ? `${e.text} ${t('brief.causeLine', 'Analysts point to {reason}.', { reason: e.cause.text })}`
+        : e.text,
+    });
   }
   for (const c of report.consequences.filter((x) => x.involvesPlayer).slice(0, 2)) {
     dispatches.push({ source: pick(OUTLETS, c.level + report.turn + 4), text: c.text });
@@ -132,10 +187,16 @@ function chainParagraph(game, report) {
   if (!mine.length) return null;
 
   const inbound = mine.filter((c) => c.targetId === game.playerId);
-  const lines = mine.slice(0, 4).map((c) => c.text);
-  const extra = mine.length > 4
-    ? t('brief.moreMeasures', ' A further {n} measures followed in the same week.', { n: mine.length - 4 })
-    : '';
+  // The same measure can be taken by several actors in one week; saying it
+  // twice reads like a bug rather than like emphasis.
+  const lines = [...new Set(mine.map((c) => c.text))];
+  const shown = lines.slice(0, 4);
+  const left = lines.length - shown.length;
+  const extra = left > 1
+    ? t('brief.moreMeasures', ' A further {n} measures followed in the same week.', { n: left })
+    : left === 1
+      ? t('brief.oneMoreMeasure', ' One more measure followed in the same week.')
+      : '';
 
   const head = inbound.length >= 3
     ? t('brief.notProportionate', 'The response was not proportionate, and it did not stop at one step. ')
@@ -143,7 +204,7 @@ function chainParagraph(game, report) {
       ? t('brief.answered', 'It did not go unanswered. ')
       : '';
 
-  return `${head}${lines.join(' ')}${extra}`;
+  return `${head}${shown.join(' ')}${extra}`;
 }
 
 function economyParagraph(game, report, state) {
@@ -189,7 +250,7 @@ function economyParagraph(game, report, state) {
   return `${stem}${because} ${books}${purse}`;
 }
 
-function domesticParagraph(game, state) {
+function domesticParagraph(game, state, turn = 0) {
   const bits = [];
   if (state.unrest > 60) bits.push(t('brief.unrestHigh', 'Unrest stands at {n} and the security services are asking for instructions', { n: Math.round(state.unrest) }));
   else if (state.unrest > 42) bits.push(t('brief.unrestMid', 'Unrest is elevated at {n}', { n: Math.round(state.unrest) }));
@@ -200,20 +261,92 @@ function domesticParagraph(game, state) {
   if (state.approval < 35) bits.push(t('brief.approvalLow', 'approval is down to {n} and your own party has started briefing against you', { n: Math.round(state.approval) }));
   else if (state.approval > 70) bits.push(t('brief.approvalHigh', 'approval is high at {n}, which is political capital you can actually spend', { n: Math.round(state.approval) }));
 
-  const active = state.modifiers.filter((m) => (m.growth || 0) < 0).slice(0, 2).map((m) => tModifier(m.label));
+  const active = [...new Set(
+    state.modifiers.filter((m) => (m.growth || 0) < 0).map((m) => tModifier(m.label)),
+  )].slice(0, 2);
   if (active.length) bits.push(t('brief.weighing', '{list} is still weighing on the books', { list: joinList(active) }));
 
-  return bits.length ? `${bits.join('; ')}.` : null;
+  return bits.length ? `${opener('domestic', turn)} ${bits.join('; ')}.` : null;
 }
 
 function worldParagraph(game, report) {
-  const bits = report.events.slice(0, 3).map((e) => e.text);
+  const bits = report.events.slice(0, 4).map((e) => (
+    e.cause
+      ? `${e.text} ${t('brief.causeLine', 'Analysts point to {reason}.', { reason: e.cause.text })}`
+      : e.text
+  ));
   const notable = report.worldOutcomes.filter((o) => o.major && o.targetId !== game.playerId).slice(0, 3);
   for (const o of notable) {
-    const target = o.targetId ? ` → ${tNation(NATIONS_BY_ID[o.targetId])}` : '';
-    bits.push(`${tNation(NATIONS_BY_ID[o.actorId])}: ${tAction({ id: o.actionId, name: o.actionName })}${target}.`);
+    const target = o.targetId ? ` → ${tNation(defOf(game, o.targetId))}` : '';
+    bits.push(`${tNation(defOf(game, o.actorId))}: ${tAction({ id: o.actionId, name: o.actionName })}${target}.`);
   }
-  return bits.length ? bits.join(' ') : null;
+  return bits.length ? `${opener('world', report.turn)} ${bits.join(' ')}` : null;
+}
+
+/**
+ * What happened to the map: ground taken, states created, alliances changed.
+ * This is the paragraph that makes a border on the situation map mean something
+ * when the player looks up at it.
+ */
+function borderParagraph(game, report) {
+  const bits = [];
+
+  for (const w of report.wars) {
+    if (w.ground) {
+      bits.push(t('brief.groundMoved', '{a} took roughly {n},000 km² from {b}.', {
+        a: tNation(defOf(game, w.ground.to)),
+        b: tNation(defOf(game, w.ground.from)),
+        n: w.ground.area,
+      }));
+    }
+    if (w.annexed) {
+      bits.push(t('brief.annexed', 'The settlement leaves {n} occupied districts on the winning side of the new line.', { n: w.annexed }));
+    }
+  }
+
+  for (const e of report.events) {
+    if (e.outcome?.def) {
+      bits.push(t('brief.newState', '{child} now exists, carved out of {parent} — {pct}% of its land and a claim on more.', {
+        child: tNation(e.outcome.def),
+        parent: tNation(defOf(game, e.outcome.def.parentId)),
+        pct: Math.round(e.outcome.share * 100),
+      }));
+    }
+  }
+
+  const mine = areaOf(game, game.playerId);
+  const start = startingAreaOf(game, game.playerId);
+  if (start > 0) {
+    const drift = ((mine - start) / start) * 100;
+    if (Math.abs(drift) >= 2) {
+      bits.push(drift > 0
+        ? t('brief.landGained', 'You now hold {pct}% more ground than you did on the day you took office.', { pct: drift.toFixed(0) })
+        : t('brief.landLost', 'You now hold {pct}% less ground than you did on the day you took office.', { pct: Math.abs(drift).toFixed(0) }));
+    }
+  }
+
+  return bits.length ? `${opener('map', report.turn)} ${bits.join(' ')}` : null;
+}
+
+/** Who changed sides, and whether it happened next to you. */
+function neighbourhoodParagraph(game, report) {
+  const changes = report.realignments || [];
+  if (!changes.length) return null;
+  const lines = changes.slice(0, 3).map((c) => (
+    c.joined
+      ? t('brief.joined', '{nation} joined {bloc}.', {
+          nation: tNation(defOf(game, c.id)),
+          bloc: t(`bloc.${c.blocId}`, BLOCS[c.blocId]?.name || c.blocId),
+        })
+      : t('brief.left', '{nation} walked out of {bloc}.', {
+          nation: tNation(defOf(game, c.id)),
+          bloc: t(`bloc.${c.blocId}`, BLOCS[c.blocId]?.name || c.blocId),
+        })
+  ));
+  const more = changes.length > 3
+    ? ` ${t('brief.moreRealignments', '{n} other governments quietly did the same.', { n: changes.length - 3 })}`
+    : '';
+  return `${lines.join(' ')}${more}`;
 }
 
 function warParagraph(game, report) {
