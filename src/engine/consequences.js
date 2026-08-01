@@ -9,14 +9,17 @@
 // in the same quarter.
 
 import { NATIONS_BY_ID } from '../data/nations.js';
-import { applyEffect } from './effects.js';
+import { applyEffect, scaleEffect } from './effects.js';
 import {
   adjustRelation,
   clamp,
   combatPower,
   getRelation,
+  livePower,
   logEvent,
   relationKey,
+  sovereignIds,
+  sovereignStates,
 } from './state.js';
 import { declareWar, findWar } from './war.js';
 import { t, tNation } from '../i18n/index.js';
@@ -182,20 +185,35 @@ export function resolveConsequences(game, rng, mods, outcome) {
   const chain = [];
   let rung = level;
 
+  // How far the answering country outweighs the one it is answering. A great
+  // power hitting back at a small one hits harder and keeps hitting; a small
+  // one hitting back at a great power mostly manages a statement.
+  const weight = clamp(
+    livePower(game, victim) / Math.max(1, livePower(game, provoker)),
+    0.35,
+    2.2,
+  );
+
   for (let link = 0; link < maxLinks; link++) {
     const state = game.nations[victim];
     const capability = clamp(state.stability / 100 + state.readiness / 200, 0.2, 1.2);
     // Each further link is a little less likely, so chains taper rather than
     // running to the cap every time.
     const chance = clamp(
-      (0.34 + ladder * 0.08) * capability * mods.aiAggression - link * 0.12,
+      (0.34 + ladder * 0.08) * capability * weight * mods.aiAggression - link * 0.12,
       0,
       0.95,
     );
     if (!rng.bool(chance)) break;
 
     const response = chooseResponse(rng, ladder, rung);
-    const applied = applyEffect(game, victim, provoker, response.apply(rng), { tensionScale: 0.55 });
+    // The response itself scales with the same weight: being answered by a
+    // superpower is a different event from being answered by a small state.
+    const applied = applyEffect(
+      game, victim, provoker,
+      scaleEffect(response.apply(rng), clamp(weight, 0.45, 1.8)),
+      { tensionScale: 0.55 },
+    );
 
     chain.push({
       type: 'consequence',
@@ -269,7 +287,7 @@ export function resolveConsequences(game, rng, mods, outcome) {
 /** Friends of the wronged party adding their own, smaller, retaliation. */
 function alliedPileOn(game, rng, responderId, againstId, level) {
   const entries = [];
-  const allies = Object.keys(game.nations).filter(
+  const allies = sovereignIds(game).filter(
     (id) =>
       id !== responderId &&
       id !== againstId &&

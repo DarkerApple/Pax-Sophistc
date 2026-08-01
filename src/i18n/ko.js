@@ -185,6 +185,11 @@ export const KO = {
     'war.casualties': '{n}천 명 사상',
 
     // ── 지도 ────────────────────────────────────────────────────────────
+    'pane.nation': '국정',
+    'pane.map': '지도',
+    'pane.briefing': '브리핑',
+    'pane.orders': '명령',
+    'pane.switch': '패널 전환',
     'map.title': '상황 지도',
     'map.jumpTo': '지역 이동…',
     'map.zoomIn': '확대',
@@ -236,7 +241,12 @@ export const KO = {
     'statecraft.joinBloc': '{nation}이(가) {bloc}에 가입했습니다.',
     'statecraft.leaveBloc': '{nation}이(가) {bloc}에서 탈퇴했습니다.',
 
-    'war.groundTaken': '{a}군이 {b} 영토 약 {n}천 km²를 점령 중입니다.',
+    'statecraft.annexed': '{victim}이(가) 독립국으로서 소멸했습니다. 이제 {winner}이(가) {n}천 km² 전역을 통치합니다.',
+    'statecraft.restored': '{nation}이(가) 폐허 위에서 다시 지도에 올랐습니다.',
+    'war.groundOverrun': '{a}군이 {b}의 수도에 진입했습니다. 조직적 저항은 끝났습니다.',
+    'war.endConquest': '{list}은(는) 더 이상 독립국이 아닙니다.',
+    'war.annexOccupied': '{nation}이(가) 점령지 약 {n}천 km²를 공식 병합했습니다. 그 주에 지도가 다시 인쇄되었습니다.',
+    'war.groundTaken': '{a}군이 {b} 영토 약 {n}천 km²를 점령 중입니다 — {b}에게 남은 것은 {left}천 km²입니다.',
     'war.endAnnex': '강화 조약이 국경을 다시 그었습니다. 점령지 {n}개 구역이 승자에게 남습니다.',
     'war.endWithdraw': '점령했던 모든 구역이 반환됩니다.',
 
@@ -777,6 +787,18 @@ export const KO = {
 
   // 저장 파일에 영어로 남는 지속 효과 이름
   modifiers: {
+    'Price controls': '가격 통제',
+    'Shortages': '물자 부족',
+    'Fiscal consolidation': '재정 긴축',
+    'Emergency policing': '비상 치안',
+    'Public health emergency': '보건 비상사태',
+    'Energy shortfall': '전력 부족',
+    'Internal insurgency': '내부 반란',
+    'Industrial action': '노동 쟁의',
+    'Currency collapse': '통화 붕괴',
+    'Food price shock': '식량 가격 충격',
+    'Occupation duties': '점령 통치 부담',
+    'Insurgency in occupied territory': '점령지 반란',
     'Stimulus flowing': '경기부양 집행 중',
     'Inflation spike': '물가 급등',
     'Infrastructure build-out': '인프라 건설',
@@ -964,6 +986,62 @@ export const KO = {
     'arms-transfer': { name: '무기 이전', blurb: '필요한 것을 보내줍니다. 그들도 기억하고, 그들의 적도 기억합니다.' },
     peacekeeping: { name: '평화유지군 파병', blurb: '푸른 헬멧과 위임 권한, 그리고 아무도 출구를 계획하지 않는 긴 주둔.' },
     intervene: { name: '군사 개입', blurb: '교전을 시작합니다. 이후의 모든 것은 사상자와 분기로 측정됩니다.' },
+    'disaster-relief': {
+      name: '긴급 구호 작전',
+      blurb: '헬기, 야전 병원, 그리고 카메라가 떠나기 전에 현장에 선 장관.',
+    },
+    'curfew': {
+      name: '통금 발령',
+      blurb: '오늘 밤 거리는 비웁니다. 다음 달에 다시 찹니다.',
+    },
+    'price-controls': {
+      name: '생필품 가격 상한제',
+      blurb: '빵과 연료 값을 동결합니다. 당장은 인기 있고, 곧 비싸집니다.',
+    },
+    'draw-reserves': {
+      name: '외환보유고 인출',
+      blurb: '국부펀드를 헐어 이번 분기를 넘깁니다. 시간을 살 뿐 다른 건 없습니다.',
+    },
+    'emergency-budget': {
+      name: '추경 편성',
+      blurb: '연중에 장부를 다시 열고 깎을 수 있는 것을 깎습니다. 아무도 고마워하지 않습니다.',
+    },
+    'reinforce-front': {
+      name: '전선 증원',
+      blurb: '오늘 밤, 열차에 실을 수 있는 전부를 동쪽으로. 계획이 아니라 임시방편입니다.',
+    },
+    'recognise-state': {
+      name: '신생국 승인',
+      blurb: '가장 먼저 문을 넘습니다. 값싸고, 아직 아무도 못 가진 우정을 얻습니다.',
+    },
+    'close-border': {
+      name: '국경 폐쇄',
+      blurb: '옆 나라에서 벌어지는 일이 걸어 들어오기 전에 통과지점을 닫습니다.',
+    },
+    'raise-alert': {
+      name: '경계태세 격상',
+      blurb: '휴가 취소, 전원 복귀. 어디서든 하나의 메시지로 읽힙니다.',
+    },
+    'back-channel': {
+      name: '비공식 채널 개설',
+      blurb: '믿을 만한 사람 하나, 기록 없는 회동 하나. 사다리에서 내려오는 가장 싼 방법입니다.',
+    },
+    'state-funeral': {
+      name: '국가 애도 주재',
+      blurb: '최악의 날에 옳은 말을 하는 사람이 됩니다. 결코 작은 일이 아닙니다.',
+    },
+    'blame-foreigners': {
+      name: '외세 개입 지목',
+      blurb: '바깥의 누군가를 가리킵니다. 국내에서는 통하고, 국외에서는 대가가 따릅니다.',
+    },
+    'annex-territory': {
+      name: '점령지 병합',
+      blurb: '더 이상 점령이라고 부르지 않습니다. 군이 쥔 땅이 전부 우리 것이 되고, 어떤 강화 조약도 되돌려주지 못합니다.',
+    },
+    'press-advantage': {
+      name: '무조건 항복 요구',
+      blurb: '협상으로 끝내지 않습니다. 상대 정부가 내미는 문서에 서명할 때까지 계속합니다.',
+    },
     'seek-peace': { name: '평화 교섭', blurb: '통로를 열고, 전선이 이미 정해놓은 결과를 받아들입니다.' },
     'nuclear-programme': { name: '핵무기 개발', blurb: '궁극의 보험이자, 모두의 문제가 되는 가장 빠른 길.' },
 

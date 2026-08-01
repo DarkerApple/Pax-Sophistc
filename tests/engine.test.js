@@ -2,13 +2,21 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { NATIONS, NATIONS_BY_ID, RELATION_ANCHORS } from '../src/data/nations.js';
-import { ACTIONS, ACTIONS_BY_ID, actionAvailability, actionCost } from '../src/engine/actions.js';
+import {
+  ACTIONS,
+  ACTIONS_BY_ID,
+  actionAvailability,
+  actionCost,
+  actionsInCategory,
+  situationTags,
+} from '../src/engine/actions.js';
 import { clampDifficulty, difficultyModifiers, difficultyPreview } from '../src/engine/difficulty.js';
 import { applyEffect, scaleEffect } from '../src/engine/effects.js';
 import { availableFunds, creditLimit, debtStress, serviceDebt } from '../src/engine/finance.js';
 import { Rng, hashSeed } from '../src/engine/rng.js';
 import { successChance } from '../src/engine/resolve.js';
 import {
+  combatPower,
   createGame,
   deserialize,
   getRelation,
@@ -16,6 +24,7 @@ import {
   setRelation,
 } from '../src/engine/state.js';
 import { advanceTurn, scoreRun, worldDigest } from '../src/engine/turn.js';
+import { gameModifiers } from '../src/engine/worldmodes.js';
 import { declareWar, findWar } from '../src/engine/war.js';
 
 const mods = difficultyModifiers(5);
@@ -410,4 +419,70 @@ test('world digest is compact and JSON-serialisable', () => {
   const json = JSON.stringify(digest);
   assert.ok(json.length < 6000, 'digest must stay small enough for a free-tier context');
   assert.deepEqual(JSON.parse(json).player.id, 'egy');
+});
+
+// ── Power asymmetry ─────────────────────────────────────────────────────────
+
+test('a big capability gap decides a targeted order, rather than nudging it', () => {
+  const game = createGame({ playerNationId: 'usa', seed: 'gap' });
+  const mods = gameModifiers(game);
+  const cyber = ACTIONS.find((a) => a.id === 'cyber-op');
+
+  const versusSmall = successChance(game, cyber, 'usa', 'cub', mods);
+  const versusPeer = successChance(game, cyber, 'usa', 'chn', mods);
+  assert.ok(versusSmall > 0.9, `a superpower should walk this: ${versusSmall}`);
+  assert.ok(versusPeer < versusSmall - 0.2, 'and a peer should be a real contest');
+
+  // And the same order, the other way round, should be close to hopeless.
+  const looking = createGame({ playerNationId: 'cub', seed: 'gap' });
+  const upward = successChance(looking, cyber, 'cub', 'usa', mods);
+  assert.ok(upward < 0.15, `punching up should be hard: ${upward}`);
+});
+
+test('combat power separates a superpower from a small state by an order of magnitude', () => {
+  const game = createGame({ playerNationId: 'usa', seed: 'power' });
+  const ratio = combatPower(game, 'usa') / combatPower(game, 'cub');
+  assert.ok(ratio > 12, `the gap should be decisive, got ${ratio.toFixed(1)}x`);
+
+  // Near-peers must stay near-peers, or every war is over in one quarter.
+  const peers = combatPower(game, 'usa') / combatPower(game, 'chn');
+  assert.ok(peers > 1 && peers < 5, `near-peers should stay near, got ${peers.toFixed(1)}x`);
+});
+
+// ── Quick orders ────────────────────────────────────────────────────────────
+
+test('the quick shelf answers what is actually happening', () => {
+  const calm = createGame({ playerNationId: 'jpn', seed: 'calm' });
+  const calmShelf = actionsInCategory('quick', calm).map((a) => a.id);
+  assert.ok(calmShelf.length > 0, 'there is always something to do');
+  assert.ok(!calmShelf.includes('disaster-relief'), 'nothing to relieve on a quiet quarter');
+  assert.ok(!calmShelf.includes('reinforce-front'), 'and no front to reinforce');
+
+  // Give it a war and a furious population, and the shelf should change.
+  const pressed = createGame({ playerNationId: 'jpn', seed: 'calm' });
+  pressed.nations.jpn.unrest = 70;
+  declareWar(pressed, 'jpn', 'prk', { rng: new Rng(1), reason: 'test' });
+  const pressedShelf = actionsInCategory('quick', pressed).map((a) => a.id);
+
+  assert.ok(pressedShelf.includes('reinforce-front'), 'a war should put the front on the shelf');
+  assert.ok(pressedShelf.includes('curfew'), 'and unrest should put a curfew on it');
+  assert.notDeepEqual(pressedShelf, calmShelf, 'the shelf must not be the same every quarter');
+});
+
+test('the quick shelf stays short enough to be quick', () => {
+  const game = createGame({ playerNationId: 'ind', seed: 'shelf' });
+  game.nations.ind.unrest = 80;
+  game.nations.ind.treasury = -500;
+  game.worldTension = 90;
+  assert.ok(actionsInCategory('quick', game).length <= 10);
+});
+
+test('situation tags are read off live state, not guessed', () => {
+  const game = createGame({ playerNationId: 'bra', seed: 'tags' });
+  assert.ok(!situationTags(game).has('war'));
+  declareWar(game, 'bra', 'arg', { rng: new Rng(2), reason: 'test' });
+  assert.ok(situationTags(game).has('war'));
+
+  game.nations.bra.treasury = -1000;
+  assert.ok(situationTags(game).has('debt'));
 });

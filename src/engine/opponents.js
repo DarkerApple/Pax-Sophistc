@@ -7,7 +7,14 @@
 import { DOCTRINES, NATIONS_BY_ID } from '../data/nations.js';
 import { ACTIONS, actionCost } from './actions.js';
 import { resolveAction } from './resolve.js';
-import { combatPower, getRelation, livePower, proximity } from './state.js';
+import {
+  combatPower,
+  getRelation,
+  livePower,
+  proximity,
+  sovereignIds,
+  sovereignStates,
+} from './state.js';
 import { declareWar, findWar } from './war.js';
 
 const CATEGORY_TO_DOCTRINE_KEY = {
@@ -21,7 +28,7 @@ const CATEGORY_TO_DOCTRINE_KEY = {
 
 /** Nations that get a full decision this turn: the powers, plus anyone involved. */
 export function activeAgents(game, limit = 16) {
-  const ranked = Object.values(game.nations)
+  const ranked = sovereignStates(game)
     .map((state) => ({ id: state.id, power: livePower(game, state.id) }))
     .sort((a, b) => b.power - a.power);
 
@@ -31,7 +38,7 @@ export function activeAgents(game, limit = 16) {
     if (!war.active) continue;
     for (const id of [...war.attackers, ...war.defenders]) ids.add(id);
   }
-  for (const other of Object.keys(game.nations)) {
+  for (const other of sovereignIds(game)) {
     const rel = getRelation(game, game.playerId, other);
     if (other !== game.playerId && (rel < -45 || rel > 65)) ids.add(other);
   }
@@ -66,7 +73,7 @@ function needMultiplier(game, state, category) {
 
 /** Pick the country this order should point at, if it needs one. */
 function chooseTarget(game, rng, actorId, action) {
-  const others = Object.keys(game.nations).filter((id) => id !== actorId);
+  const others = sovereignIds(game).filter((id) => id !== actorId);
   if (!others.length) return null;
   const actorDef = NATIONS_BY_ID[actorId];
   const friendly = (action.effects?.success?.relation || 0) > 0;
@@ -110,7 +117,7 @@ function considerWar(game, rng, mods, actorId) {
   if (alreadyFighting) return null;
   if (state.stability < 35 || state.treasury < state.gdp * 20) return null;
 
-  const targets = Object.keys(game.nations)
+  const targets = sovereignIds(game)
     .filter((id) => id !== actorId)
     .map((id) => ({
       id,
@@ -151,7 +158,7 @@ export function runOpponents(game, rng, mods) {
   // At higher difficulty, rivals of a leading player deliberately gang up.
   const playerPower = livePower(game, game.playerId);
   const leading =
-    playerPower >= Math.max(...Object.keys(game.nations).map((id) => livePower(game, id))) - 2;
+    playerPower >= Math.max(...sovereignIds(game).map((id) => livePower(game, id))) - 2;
   const coordinating =
     leading && rng.bool(mods.rivalCoordination)
       ? agents.filter((id) => getRelation(game, game.playerId, id) < -20)

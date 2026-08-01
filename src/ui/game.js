@@ -73,6 +73,9 @@ export class GameScreen {
     this.hoverId = null;
     this.pinnedId = null;
     this.helpOpen = false;
+    // Which pane a phone is showing. Ignored above the breakpoint, where all
+    // three columns are on screen at once.
+    this.pane = 'map';
   }
 
   get game() {
@@ -98,11 +101,18 @@ export class GameScreen {
     mount(this.root,
       h('div.game',
         this.#topbar(),
-        h('div.game__body',
-          h('div.col.col--left', { dataset: { scroll: 'left' } },
+        this.#paneTabs(),
+        // On a phone one pane is on screen at a time; the tabs above switch
+        // them. Above the breakpoint the data-pane attributes do nothing and
+        // all three columns are visible together.
+        h('div.game__body', { dataset: { pane: this.pane } },
+          h('div.col.col--left', { dataset: { scroll: 'left', pane: 'nation' } },
             this.#dashboard(), this.#inspector(), this.#escalation(), this.#objectives(), this.#relations()),
-          h('div.col.col--centre', { dataset: { scroll: 'centre' } }, this.#mapPanel(), this.#feed()),
-          h('div.col.col--right', { dataset: { scroll: 'right' } }, this.#planner()),
+          h('div.col.col--centre', { dataset: { scroll: 'centre' } },
+            h('div.pane', { dataset: { pane: 'map' } }, this.#mapPanel()),
+            h('div.pane', { dataset: { pane: 'briefing' } }, this.#feed()),
+          ),
+          h('div.col.col--right', { dataset: { scroll: 'right', pane: 'orders' } }, this.#planner()),
         ),
         this.#actionBar(),
       ),
@@ -132,6 +142,36 @@ export class GameScreen {
       this.map.setSelected(this.pinnedId);
       this.#syncZoomLabel();
     }
+  }
+
+  /**
+   * The phone's pane switcher. Hidden by CSS on anything wide enough to show
+   * the three columns side by side, so it costs desktop nothing.
+   */
+  #paneTabs() {
+    const game = this.game;
+    const queued = this.orders.length;
+    const panes = [
+      { id: 'nation', icon: '⌂', label: t('pane.nation', 'Nation') },
+      { id: 'map', icon: '◎', label: t('pane.map', 'Map') },
+      { id: 'briefing', icon: '☰', label: t('pane.briefing', 'Briefing') },
+      { id: 'orders', icon: '✎', label: t('pane.orders', 'Orders'), badge: queued || null },
+    ];
+    return h('nav.panetabs', { 'aria-label': t('pane.switch', 'Switch panel') },
+      panes.map((pane) =>
+        h('button.panetab', {
+          class: this.pane === pane.id ? 'panetab is-active' : 'panetab',
+          'aria-pressed': String(this.pane === pane.id),
+          onclick: () => { this.pane = pane.id; this.render(); },
+        },
+          h('span.panetab__icon', pane.icon),
+          h('span.panetab__label', pane.label),
+          pane.badge ? h('span.panetab__badge', String(pane.badge)) : null,
+          // A decision waiting on the desk is the one thing worth a dot.
+          pane.id === 'briefing' && game.pendingDecision ? h('span.panetab__dot') : null,
+        ),
+      ),
+    );
   }
 
   /** Refresh only the inspector — hovering the map must not rebuild the map. */
@@ -691,7 +731,7 @@ export class GameScreen {
     const categories = CATEGORIES.filter((c) => !c.wartimeOnly || atWar);
     if (!categories.some((c) => c.id === this.category)) this.category = 'economy';
 
-    const catalogue = actionsInCategory(this.category)
+    const catalogue = actionsInCategory(this.category, game)
       .sort((a, b) => Number(recommended.has(b.id)) - Number(recommended.has(a.id)));
 
     return h('section.panel.panel--planner',

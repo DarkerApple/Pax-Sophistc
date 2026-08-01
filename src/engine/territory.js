@@ -112,7 +112,7 @@ export function landCells() {
       if (lat < south) south = lat;
       if (lat > north) north = lat;
     }
-    return { ring: mass.ring, west, east, south, north };
+    return { ring: mass.ring, holes: mass.holes || [], west, east, south, north };
   });
 
   for (let row = 0; row < ROWS; row++) {
@@ -121,10 +121,12 @@ export function landCells() {
       const { lon, lat } = cellCentre(index);
       for (const box of boxes) {
         if (lon < box.west || lon > box.east || lat < box.south || lat > box.north) continue;
-        if (pointInRing(lon, lat, box.ring)) {
-          cells.push(index);
-          break;
-        }
+        if (!pointInRing(lon, lat, box.ring)) continue;
+        // An inland sea is not land, and the countries around it should not be
+        // handed it as territory.
+        if (box.holes.some((hole) => pointInRing(lon, lat, hole))) break;
+        cells.push(index);
+        break;
       }
     }
   }
@@ -138,7 +140,7 @@ export function landCells() {
 // so "reach" is literally a radius in kilometres. Starting from the radius of a
 // circle with the country's real area, a few damped passes pull each radius
 // until the claimed area lands near the real one.
-const FIT_PASSES = 22;
+const FIT_PASSES = 40;
 
 /** Unit-sphere vector, so the hot loop costs a dot product and one acos. */
 function unitVector(lat, lon) {
@@ -196,8 +198,8 @@ function fitReach(roster) {
       // whole archipelago, and the fit would oscillate forever instead of
       // settling. (Malaysia, hello.)
       const ratio = target[n] / Math.max(claimed[n], target[n] * 0.05);
-      const step = Math.pow(ratio, 0.24);
-      reach[n] *= Math.min(1.35, Math.max(0.72, step));
+      const step = Math.pow(ratio, 0.16);
+      reach[n] *= Math.min(1.22, Math.max(0.82, step));
     }
   }
 
@@ -304,6 +306,16 @@ export function areaOf(game, ownerId) {
   return km2 / 1000;
 }
 
+/** The slots a holder started the run with, whoever holds them now. */
+export function baseCellsOf(game, ownerId) {
+  const base = baseOwners(game?.scenario);
+  const slots = [];
+  for (let slot = 0; slot < base.length; slot++) {
+    if (base[slot] === ownerId) slots.push(slot);
+  }
+  return slots;
+}
+
 /** Baseline land area, in thousand km², for "how much have I lost?" maths. */
 export function startingAreaOf(game, ownerId) {
   const base = baseOwners(game?.scenario);
@@ -368,12 +380,12 @@ export function setOwner(game, slots, ownerId) {
  *
  * @returns {{cells: number[], area: number}} what actually changed hands
  */
-export function transferLand(game, fromId, toId, targetKm2, anchor = null) {
+export function transferLand(game, fromId, toId, targetKm2, anchor = null, { total = false } = {}) {
   const held = cellsOf(game, fromId);
-  if (!held.length || targetKm2 <= 0) return { cells: [], area: 0 };
+  if (!held.length || targetKm2 <= 0) return { cells: [], area: 0, emptied: false };
   const cells = landCells();
   const to = anchor || NATIONS_BY_ID[toId] || centroidOf(game, toId);
-  if (!to) return { cells: [], area: 0 };
+  if (!to) return { cells: [], area: 0, emptied: false };
 
   const ranked = held
     .map((slot) => {
@@ -386,14 +398,29 @@ export function transferLand(game, fromId, toId, targetKm2, anchor = null) {
   let moved = 0;
   for (const { slot } of ranked) {
     if (moved >= targetKm2) break;
-    // Never take the last of a country — a state without ground is handled by
-    // collapse, not by the border code.
-    if (held.length - taken.length <= 1) break;
+    // Ordinarily a country keeps its last patch of ground: losing a war is not
+    // the same as ceasing to exist. `total` is the conquest path, where it is.
+    if (!total && held.length - taken.length <= 1) break;
     taken.push(slot);
     moved += cellArea(cells[slot]);
   }
   setOwner(game, taken, toId);
-  return { cells: taken, area: moved / 1000 };
+  return { cells: taken, area: moved / 1000, emptied: taken.length >= held.length };
+}
+
+/** Hand every cell a country holds to somebody else. Conquest, in one call. */
+export function seizeAll(game, fromId, toId) {
+  const held = [...cellsOf(game, fromId)];
+  if (!held.length) return { cells: [], area: 0 };
+  const cells = landCells();
+  const area = held.reduce((sum, slot) => sum + cellArea(cells[slot]), 0) / 1000;
+  setOwner(game, held, toId);
+  return { cells: held, area };
+}
+
+/** True when a holder has been pushed off the map entirely. */
+export function hasNoLand(game, id) {
+  return cellsOf(game, id).length === 0;
 }
 
 /**
@@ -476,8 +503,9 @@ export function carveOutlyingRegion(game, ownerId, shareOfArea = 0.25) {
 // ── Drawing ─────────────────────────────────────────────────────────────────
 
 /**
- * Merge a holder's cells into horizontal runs — one rectangle per run keeps the
- * SVG at hundreds of path commands instead of thousands.
+ * Merge a holder's cells into horizontal runs — one rectangle per run.
+ * Kept for anything that wants the raw blocks; the map draws outlines instead,
+ * because a country made of rectangles reads as graph paper.
  * @returns {Array<{west: number, south: number, east: number, north: number}>}
  */
 export function runsFor(game, ownerId) {
@@ -516,68 +544,166 @@ export function runsFor(game, ownerId) {
   return runs;
 }
 
+// ── Outlines ────────────────────────────────────────────────────────────────
+//
+// A cell grid drawn as cells looks like a spreadsheet. What follows turns each
+// country's cells into closed rings and then softens them:
+//
+//   1. Collect the cell edges that face somebody else or the sea.
+//   2. Stitch those edges into closed loops.
+//   3. Displace every grid corner by a fixed pseudo-random amount, so a border
+//      never runs perfectly along a line of latitude. The displacement is a
+//      hash of the corner, so neighbouring countries agree on where it moved
+//      to and no gap opens between them.
+//   4. Round the corners off. The result reads as a frontier rather than a
+//      staircase, at no cost in accuracy the grid did not already have.
+
+// How far a grid corner may wander, as a fraction of a cell.
+const JITTER = 0.34;
+// Corner-cutting passes. Two is smooth; three starts eating small islands.
+const SMOOTH_PASSES = 2;
+
+/** Deterministic hash of a grid corner → a stable offset in [-1, 1). */
+function vertexNoise(col, row, salt) {
+  let h = (col * 73856093) ^ (row * 19349663) ^ (salt * 83492791);
+  h = Math.imul(h ^ (h >>> 13), 0x5bd1e995);
+  h ^= h >>> 15;
+  return ((h >>> 0) / 4294967296) * 2 - 1;
+}
+
+/** Where a grid corner actually sits once it has been nudged off the lattice. */
+function vertexAt(col, row) {
+  return [
+    GRID.lonMin + (col + vertexNoise(col, row, 1) * JITTER) * GRID.step,
+    GRID.latMax - (row + vertexNoise(col, row, 2) * JITTER) * GRID.step,
+  ];
+}
+
+const vertexKey = (col, row) => `${col},${row}`;
+
 /**
- * Only the edges where this holder meets somebody else or the sea — the outline
- * worth stroking. Returns segments as [lon1, lat1, lon2, lat2].
- * @returns {Array<[number, number, number, number]>}
+ * Every closed ring bounding a holder's territory, in lattice coordinates.
+ * @returns {Array<Array<[number, number]>>} rings of [col, row] grid corners
  */
-export function borderSegmentsFor(game, ownerId) {
+function boundaryRings(game, ownerId) {
   const slots = cellsOf(game, ownerId);
   if (!slots.length) return [];
   const cells = landCells();
-  const mine = new Set(slots);
-  const lookup = slotLookup();
-  const segments = [];
+  const mine = new Set();
+  for (const slot of slots) mine.add(cells[slot]);
 
-  for (const slot of slots) {
-    const [col, row] = cellColRow(cells[slot]);
-    const west = GRID.lonMin + col * GRID.step;
-    const east = west + GRID.step;
-    const north = GRID.latMax - row * GRID.step;
-    const south = north - GRID.step;
-    const foreign = (dc, dr) => {
-      const nc = (col + dc + COLS) % COLS;
-      const nr = row + dr;
-      if (nr < 0 || nr >= ROWS) return true;
-      const neighbour = lookup.get(cellIndex(nc, nr));
-      return neighbour === undefined || !mine.has(neighbour);
-    };
-    if (foreign(0, -1)) segments.push([west, north, east, north]);
-    if (foreign(0, 1)) segments.push([west, south, east, south]);
-    if (foreign(-1, 0)) segments.push([west, north, west, south]);
-    if (foreign(1, 0)) segments.push([east, north, east, south]);
+  const inside = (col, row) => {
+    if (row < 0 || row >= ROWS) return false;
+    return mine.has(cellIndex((col + COLS) % COLS, row));
+  };
+
+  // Directed edges, wound so the interior is always on the same side. Walking
+  // them by "the next edge leaving where this one arrived" yields closed rings.
+  const outgoing = new Map();
+  const addEdge = (from, to) => {
+    const key = vertexKey(from[0], from[1]);
+    let list = outgoing.get(key);
+    if (!list) outgoing.set(key, (list = []));
+    list.push(to);
+  };
+
+  for (const index of mine) {
+    const [col, row] = cellColRow(index);
+    if (!inside(col, row - 1)) addEdge([col, row], [col + 1, row]);          // north
+    if (!inside(col + 1, row)) addEdge([col + 1, row], [col + 1, row + 1]);  // east
+    if (!inside(col, row + 1)) addEdge([col + 1, row + 1], [col, row + 1]);  // south
+    if (!inside(col - 1, row)) addEdge([col, row + 1], [col, row]);          // west
   }
-  return segments;
+
+  const rings = [];
+  for (const startKey of [...outgoing.keys()]) {
+    const list = outgoing.get(startKey);
+    while (list && list.length) {
+      const ring = [];
+      const first = startKey.split(',').map(Number);
+      let from = first;
+      let next = list.shift();
+      let guard = 0;
+
+      while (next && guard++ < 40000) {
+        ring.push(from);
+        from = next;
+        if (from[0] === first[0] && from[1] === first[1]) break;
+        const outs = outgoing.get(vertexKey(from[0], from[1]));
+        if (!outs || !outs.length) break;
+        next = outs.shift();
+      }
+      if (ring.length >= 4) rings.push(ring);
+    }
+  }
+  return rings;
+}
+
+/** Chaikin corner cutting on a closed ring. */
+function smoothRing(points, passes = SMOOTH_PASSES) {
+  let ring = points;
+  for (let pass = 0; pass < passes; pass++) {
+    if (ring.length < 4) break;
+    const out = [];
+    for (let i = 0; i < ring.length; i++) {
+      const [ax, ay] = ring[i];
+      const [bx, by] = ring[(i + 1) % ring.length];
+      out.push([ax + (bx - ax) * 0.25, ay + (by - ay) * 0.25]);
+      out.push([ax + (bx - ax) * 0.75, ay + (by - ay) * 0.75]);
+    }
+    ring = out;
+  }
+  return ring;
 }
 
 /**
- * Every border on the map, drawn once rather than once per side: for each land
- * cell only its east and south edges are tested, plus the coastline.
- * @returns {Array<[number, number, number, number]>}
+ * A holder's territory as smooth closed rings in degrees, ready to draw.
+ *
+ * Rings that wrap the date line are cut, because a polygon that runs off one
+ * edge of an equirectangular map and back on at the other draws a stripe across
+ * the whole world.
+ *
+ * @returns {Array<Array<[number, number]>>} rings of [lon, lat]
  */
-export function allBorderSegments(game) {
-  const cells = landCells();
-  const lookup = slotLookup();
-  const segments = [];
-  for (let slot = 0; slot < cells.length; slot++) {
-    const owner = ownerAt(game, slot);
-    const [col, row] = cellColRow(cells[slot]);
-    const west = GRID.lonMin + col * GRID.step;
-    const east = west + GRID.step;
-    const north = GRID.latMax - row * GRID.step;
-    const south = north - GRID.step;
-    const differs = (dc, dr) => {
-      const nc = (col + dc + COLS) % COLS;
-      const nr = row + dr;
-      if (nr < 0 || nr >= ROWS) return true;
-      const neighbour = lookup.get(cellIndex(nc, nr));
-      if (neighbour === undefined) return false; // open sea: the coast draws it
-      return ownerAt(game, neighbour) !== owner;
-    };
-    if (differs(1, 0)) segments.push([east, north, east, south]);
-    if (differs(0, 1)) segments.push([west, south, east, south]);
+const outlineCache = new WeakMap();
+
+export function outlineFor(game, ownerId) {
+  // Tracing and smoothing is the most expensive thing the map does, and the
+  // answer only changes when a cell changes hands.
+  const stamp = territoryStamp(game);
+  let cached = outlineCache.get(game);
+  if (!cached || cached.stamp !== stamp) {
+    cached = { stamp, rings: new Map() };
+    outlineCache.set(game, cached);
   }
-  return segments;
+  if (cached.rings.has(ownerId)) return cached.rings.get(ownerId);
+
+  const out = [];
+  for (const ring of boundaryRings(game, ownerId)) {
+    const positioned = ring.map(([col, row]) => vertexAt(col, row));
+    for (const piece of splitAtDateLine(smoothRing(positioned))) {
+      if (piece.length >= 3) out.push(piece);
+    }
+  }
+  cached.rings.set(ownerId, out);
+  return out;
+}
+
+/** Cut a ring wherever consecutive points jump most of the way round the globe. */
+function splitAtDateLine(ring) {
+  const pieces = [];
+  let current = [];
+  for (let i = 0; i < ring.length; i++) {
+    const point = ring[i];
+    const previous = ring[i - 1];
+    if (previous && Math.abs(point[0] - previous[0]) > 180) {
+      if (current.length) pieces.push(current);
+      current = [];
+    }
+    current.push(point);
+  }
+  if (current.length) pieces.push(current);
+  return pieces;
 }
 
 /** Every holder that currently owns ground, largest first. */

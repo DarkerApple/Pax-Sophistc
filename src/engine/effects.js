@@ -3,7 +3,7 @@
 // produce effect objects in this shape, and all of them land here.
 
 import { NATIONS_BY_ID } from '../data/nations.js';
-import { addModifier, adjustRelation, clamp } from './state.js';
+import { addModifier, adjustRelation, clamp, sovereignIds, sovereignStates } from './state.js';
 import { t, tModifier, tStat } from '../i18n/index.js';
 
 const STAT_FIELDS = {
@@ -117,7 +117,7 @@ export function applyEffect(game, actorId, targetId, effect, { tensionScale = 1 
 
   if (effect.relationWithBlocs && typeof effect.relationWithBlocs === 'object') {
     for (const [blocId, delta] of Object.entries(effect.relationWithBlocs)) {
-      for (const other of Object.values(game.nations)) {
+      for (const other of sovereignStates(game)) {
         if (other.id === actorId) continue;
         const def = NATIONS_BY_ID[other.id];
         if (def && (def.blocs || []).includes(blocId)) {

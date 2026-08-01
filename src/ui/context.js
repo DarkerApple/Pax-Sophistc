@@ -6,19 +6,19 @@
 // answer at least two of those three, and this module is where that framing
 // lives so it reads the same everywhere.
 
-import { defOf, livePower, rankedNations } from '../engine/state.js';
+import { defOf, livePower, rankedNations, sovereignIds, sovereignStates } from '../engine/state.js';
 import { areaOf, startingAreaOf } from '../engine/territory.js';
 import { t, tNation } from '../i18n/index.js';
 
 /** Where a country sits on one statistic, 1 = highest. */
 export function rankOf(game, id, pick) {
-  const values = Object.values(game.nations).map((s) => ({ id: s.id, v: pick(s, game) }));
+  const values = sovereignStates(game).map((s) => ({ id: s.id, v: pick(s, game) }));
   values.sort((a, b) => b.v - a.v);
   return values.findIndex((r) => r.id === id) + 1;
 }
 
 export function totalNations(game) {
-  return Object.keys(game.nations).length;
+  return sovereignIds(game).length;
 }
 
 /** "21st of 56" — the same phrasing wherever a rank appears. */

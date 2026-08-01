@@ -12,14 +12,8 @@
 
 import { LANDMASSES, OCEANS } from '../data/geography.js';
 import { NATIONS_BY_ID } from '../data/nations.js';
-import { blocsOf, defOf, getRelation, livePower } from '../engine/state.js';
-import {
-  allBorderSegments,
-  areaOf,
-  borderSegmentsFor,
-  holders,
-  runsFor,
-} from '../engine/territory.js';
+import { blocsOf, defOf, getRelation, livePower, sovereignIds, sovereignStates } from '../engine/state.js';
+import { areaOf, holders, outlineFor } from '../engine/territory.js';
 import { t, tNation } from '../i18n/index.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
@@ -68,24 +62,15 @@ function svg(tag, attrs = {}) {
   return el;
 }
 
-/**
- * One merged run of cells as a rectangle. The hair of overlap on each side
- * stops antialiasing from drawing pale seams between neighbouring runs of the
- * same country.
- */
-function runToPath(run) {
-  const [x1, y1] = project(run.north, run.west);
-  const [x2, y2] = project(run.south, run.east);
-  const p = 0.06;
-  return `M${(x1 - p).toFixed(2)},${(y1 - p).toFixed(2)}H${(x2 + p).toFixed(2)}V${(y2 + p).toFixed(2)}H${(x1 - p).toFixed(2)}Z`;
-}
-
-function segmentsToPath(segments) {
+/** A set of closed [lon, lat] rings as one SVG path. */
+function ringsToPath(rings) {
   let d = '';
-  for (const [lon1, lat1, lon2, lat2] of segments) {
-    const [x1, y1] = project(lat1, lon1);
-    const [x2, y2] = project(lat2, lon2);
-    d += `M${x1.toFixed(1)},${y1.toFixed(1)}L${x2.toFixed(1)},${y2.toFixed(1)}`;
+  for (const ring of rings) {
+    for (let i = 0; i < ring.length; i++) {
+      const [x, y] = project(ring[i][1], ring[i][0]);
+      d += `${i === 0 ? 'M' : 'L'}${x.toFixed(2)},${y.toFixed(2)}`;
+    }
+    d += 'Z';
   }
   return d;
 }
@@ -215,6 +200,14 @@ export class WorldMap {
     this.game = game;
     while (this.root.firstChild) this.root.removeChild(this.root.firstChild);
     this.nodeEls.clear();
+    // On a phone the true aspect ratio gives a 130px letterbox strip. Filling
+    // the taller box instead crops the empty Pacific, which panning gets back.
+    this.root.setAttribute(
+      'preserveAspectRatio',
+      this.container.clientWidth > 0 && this.container.clientWidth < 700
+        ? 'xMidYMid slice'
+        : 'xMidYMid meet',
+    );
 
     this.root.append(this.#defs());
 
@@ -231,7 +224,7 @@ export class WorldMap {
     const nodes = svg('g', { class: 'map-nodes' });
     const labels = svg('g', { class: 'map-labels' });
     // Big powers painted first so smaller neighbours land on top and stay clickable.
-    const ranked = Object.keys(game.nations)
+    const ranked = sovereignIds(game)
       .map((id) => ({ id, power: livePower(game, id) }))
       .sort((a, b) => b.power - a.power);
     const maxPower = Math.max(...ranked.map((r) => r.power), 1);
@@ -275,7 +268,10 @@ export class WorldMap {
   #land() {
     const g = svg('g', { class: 'map-land' });
     for (const mass of LANDMASSES) {
-      g.append(svg('path', { d: ringToPath(mass.ring), class: 'map-land__shape' }));
+      // Ring first, then any inland seas as further subpaths — the even-odd
+      // fill rule punches them out.
+      const d = ringToPath(mass.ring) + (mass.holes || []).map(ringToPath).join('');
+      g.append(svg('path', { d, class: 'map-land__shape', 'fill-rule': 'evenodd' }));
     }
     return g;
   }
@@ -288,15 +284,17 @@ export class WorldMap {
     const g = svg('g', { class: 'map-territories' });
     this.territoryEls = new Map();
 
+    // Each country is one closed, smoothed outline. Filled and stroked in the
+    // same path, so its own border is always exactly on its own edge.
     for (const ownerId of holders(game)) {
-      const runs = runsFor(game, ownerId);
-      if (!runs.length) continue;
+      const rings = outlineFor(game, ownerId);
+      if (!rings.length) continue;
       const { fill, opacity } = this.#encoding(game, ownerId);
       const isPlayer = ownerId === game.playerId;
       const path = svg('path', {
-        d: runs.map(runToPath).join(''),
+        d: ringsToPath(rings),
         class: `map-territory${isPlayer ? ' is-player' : ''}`,
-        style: `fill:${fill};fill-opacity:${(opacity * (isPlayer ? 0.82 : 0.6)).toFixed(2)}`,
+        style: `fill:${fill};fill-opacity:${(opacity * (isPlayer ? 0.82 : 0.62)).toFixed(2)}`,
       });
       path.dataset.nation = ownerId;
       path.dataset.area = areaOf(game, ownerId).toFixed(0);
@@ -311,14 +309,6 @@ export class WorldMap {
       g.append(path);
     }
 
-    // One deduplicated pass for every border on the map, then a heavier outline
-    // for whichever country you are looking at.
-    g.append(
-      svg('path', {
-        d: segmentsToPath(allBorderSegments(game)),
-        class: 'map-territory__edges',
-      }),
-    );
     this.outlineEl = svg('path', { class: 'map-territory__outline' });
     g.append(this.outlineEl);
     this.#drawOutline();
@@ -329,7 +319,7 @@ export class WorldMap {
   #drawOutline() {
     if (!this.outlineEl || !this.game) return;
     const id = this.selectedId || this.game.playerId;
-    this.outlineEl.setAttribute('d', id ? segmentsToPath(borderSegmentsFor(this.game, id)) : '');
+    this.outlineEl.setAttribute('d', id ? ringsToPath(outlineFor(this.game, id)) : '');
     this.outlineEl.classList.toggle('is-player', id === this.game.playerId);
   }
 
@@ -353,7 +343,7 @@ export class WorldMap {
       }
     }
     if (this.mode === 'relations' || this.mode === 'conflict') {
-      for (const id of Object.keys(game.nations)) {
+      for (const id of sovereignIds(game)) {
         if (id === game.playerId) continue;
         const rel = getRelation(game, game.playerId, id);
         if (rel >= 65) g.append(this.#link(game.playerId, id, 'ally'));
@@ -389,7 +379,7 @@ export class WorldMap {
 
     switch (this.mode) {
       case 'power': {
-        const ranked = Object.keys(game.nations).map((n) => livePower(game, n));
+        const ranked = sovereignIds(game).map((n) => livePower(game, n));
         const min = Math.min(...ranked);
         const max = Math.max(...ranked);
         return { fill: rampStep((livePower(game, id) - min) / Math.max(1, max - min)), opacity: 1 };
@@ -496,6 +486,15 @@ export class WorldMap {
     let dragging = false;
     let moved = false;
     let last = null;
+    // Live touch points, so two fingers can pinch. Without this a phone has no
+    // way to zoom at all: there is no wheel to turn.
+    const touches = new Map();
+    let pinch = null;
+
+    // Belt and braces for the browsers that start a selection before
+    // pointerdown fires.
+    this.root.addEventListener('dragstart', (e) => e.preventDefault());
+    this.root.addEventListener('selectstart', (e) => e.preventDefault());
 
     this.root.addEventListener('wheel', (e) => {
       e.preventDefault();
@@ -504,7 +503,17 @@ export class WorldMap {
     }, { passive: false });
 
     this.root.addEventListener('pointerdown', (e) => {
+      if (e.pointerType === 'touch') touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (touches.size === 2) {
+        // Second finger down: stop panning and start pinching.
+        dragging = false;
+        pinch = this.#pinchState(touches);
+        return;
+      }
       if (e.button !== 0) return;
+      // Without this the browser starts a text selection on the labels and the
+      // drag turns into a highlight sweep instead of a pan.
+      e.preventDefault();
       dragging = true;
       moved = false;
       this.justPanned = false;
@@ -513,6 +522,18 @@ export class WorldMap {
     });
 
     this.root.addEventListener('pointermove', (e) => {
+      if (touches.has(e.pointerId)) touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (pinch && touches.size === 2) {
+        const now = this.#pinchState(touches);
+        if (now.distance > 0 && pinch.distance > 0) {
+          const point = this.#toSvg(now.x, now.y);
+          this.#zoomAt(point.x, point.y, now.distance / pinch.distance);
+          this.justPanned = true;
+        }
+        pinch = now;
+        e.preventDefault();
+        return;
+      }
       if (!dragging) return;
       const rect = this.root.getBoundingClientRect();
       const scale = W / rect.width;
@@ -538,6 +559,8 @@ export class WorldMap {
     });
 
     const endDrag = (e) => {
+      touches.delete(e.pointerId);
+      if (touches.size < 2) pinch = null;
       if (!dragging) return;
       dragging = false;
       this.justPanned = moved;
@@ -579,6 +602,16 @@ export class WorldMap {
     this.camera.y += dy;
     this.#clampCamera();
     this.#applyCamera();
+  }
+
+  /** Midpoint and separation of two fingers, in client coordinates. */
+  #pinchState(touches) {
+    const [a, b] = [...touches.values()];
+    return {
+      x: (a.x + b.x) / 2,
+      y: (a.y + b.y) / 2,
+      distance: Math.hypot(a.x - b.x, a.y - b.y),
+    };
   }
 
   #toSvg(clientX, clientY) {

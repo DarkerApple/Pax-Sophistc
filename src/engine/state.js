@@ -99,6 +99,9 @@ function buildRelations(roster, anchors, rng, scramble = 0) {
 function initialNationState(def) {
   return {
     id: def.id,
+    // Set false when a country is conquered outright. It stays in the roster so
+    // the run can say what became of it, and so it can be liberated later.
+    sovereign: true,
     gdp: def.gdp,
     baseGrowth: def.growth,
     population: def.population,
@@ -320,9 +323,29 @@ export function dateLabel(game) {
   return `${QUARTERS[game.quarter]} ${game.year}`;
 }
 
+/**
+ * A conquered country stays in the roster — the run has to be able to say what
+ * became of it, and it can be liberated — but it stops being a player. Almost
+ * everything that walks the roster wants only the ones still standing.
+ */
+export function isSovereign(game, id) {
+  const state = game?.nations?.[id];
+  return Boolean(state) && state.sovereign !== false;
+}
+
+/** @returns {Array<object>} the state objects of every country still standing. */
+export function sovereignStates(game) {
+  return Object.values(game.nations).filter((s) => s.sovereign !== false);
+}
+
+/** @returns {string[]} the ids of every country still standing. */
+export function sovereignIds(game) {
+  return Object.keys(game.nations).filter((id) => game.nations[id].sovereign !== false);
+}
+
 /** Nations sorted by live in-game power rather than by their starting sheet. */
 export function rankedNations(game) {
-  return Object.values(game.nations)
+  return sovereignStates(game)
     .map((state) => ({ state, def: NATIONS_BY_ID[state.id], power: livePower(game, state.id) }))
     .sort((a, b) => b.power - a.power);
 }
@@ -340,28 +363,35 @@ export function livePower(game, id) {
   );
 }
 
-/** Effective military strength for war maths. */
+/**
+ * Effective military strength for war maths.
+ *
+ * Military is raised to a power rather than used linearly: real force is not
+ * additive, and a 100-military state should not merely be three times a
+ * 33-military one. Technology multiplies rather than nudges, because that is
+ * what a generational equipment gap actually does to a battlefield.
+ */
 export function combatPower(game, id) {
   const state = game.nations[id];
   if (!state) return 0;
-  const economy = Math.min(2.2, 0.55 + Math.log10(Math.max(state.gdp, 0.02) * 1000) / 4.2);
+  const economy = Math.min(2.6, 0.5 + Math.log10(Math.max(state.gdp, 0.02) * 1000) / 3.6);
   return (
-    state.military *
-    (0.45 + state.readiness / 180) *
-    (0.75 + state.tech / 320) *
+    Math.pow(Math.max(state.military, 1), 1.45) *
+    (0.35 + state.readiness / 140) *
+    (0.45 + state.tech / 90) *
     economy *
-    (0.7 + state.stability / 320)
+    (0.65 + state.stability / 300)
   );
 }
 
 export function allies(game, id) {
-  return Object.keys(game.nations).filter(
+  return sovereignIds(game).filter(
     (other) => other !== id && getRelation(game, id, other) >= 55,
   );
 }
 
 export function rivals(game, id) {
-  return Object.keys(game.nations).filter(
+  return sovereignIds(game).filter(
     (other) => other !== id && getRelation(game, id, other) <= -35,
   );
 }

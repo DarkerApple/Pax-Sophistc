@@ -4,12 +4,20 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { NATIONS } from '../src/data/nations.js';
-import { createGame, serialize, deserialize } from '../src/engine/state.js';
 import {
-  allBorderSegments,
+  createGame,
+  deserialize,
+  rankedNations,
+  serialize,
+  sovereignIds,
+} from '../src/engine/state.js';
+import { advanceTurn } from '../src/engine/turn.js';
+import { Rng } from '../src/engine/rng.js';
+import { annexOccupied, concludeWar, declareWar } from '../src/engine/war.js';
+import { reconcileSovereignty } from '../src/engine/statecraft.js';
+import {
   areaOf,
   baseOwners,
-  borderSegmentsFor,
   carveOutlyingRegion,
   cellArea,
   cellCentre,
@@ -20,8 +28,10 @@ import {
   holders,
   landCells,
   neighboursOf,
+  outlineFor,
   ownerAt,
   runsFor,
+  seizeAll,
   setOwner,
   startingAreaOf,
   transferLand,
@@ -147,8 +157,43 @@ test('drawing data is bounded enough to put in the DOM', () => {
   let runs = 0;
   for (const id of holders(game)) runs += runsFor(game, id).length;
   assert.ok(runs > 100 && runs < 4000, `${runs} run rectangles is out of range`);
-  assert.ok(allBorderSegments(game).length < 6000, 'too many border segments to draw');
-  assert.ok(borderSegmentsFor(game, 'kor').length > 0, 'a country must have an outline');
+
+  let points = 0;
+  for (const id of holders(game)) {
+    for (const ring of outlineFor(game, id)) points += ring.length;
+  }
+  assert.ok(points > 2000 && points < 60_000, `${points} outline points is out of range`);
+});
+
+test('every country traces into closed rings rather than a staircase', () => {
+  const game = fresh();
+  for (const id of ['kor', 'fra', 'jpn', 'usa', 'rus']) {
+    const rings = outlineFor(game, id);
+    assert.ok(rings.length > 0, `${id} has no outline`);
+    for (const ring of rings) assert.ok(ring.length >= 3, `${id} has a degenerate ring`);
+  }
+
+  // Smoothing must not move a border so far that a country changes size.
+  const rings = outlineFor(game, 'fra');
+  const lons = rings.flat().map((p) => p[0]);
+  const lats = rings.flat().map((p) => p[1]);
+  assert.ok(Math.min(...lons) > -20 && Math.max(...lons) < 25, 'France is still in Europe');
+  assert.ok(Math.min(...lats) > 35 && Math.max(...lats) < 56);
+});
+
+test('an outline never draws a stripe across the world at the date line', () => {
+  const game = fresh();
+  // Russia and the United States both straddle it.
+  for (const id of ['rus', 'usa']) {
+    for (const ring of outlineFor(game, id)) {
+      for (let i = 1; i < ring.length; i++) {
+        assert.ok(
+          Math.abs(ring[i][0] - ring[i - 1][0]) < 180,
+          `${id} has a segment that wraps the globe`,
+        );
+      }
+    }
+  }
 });
 
 test('the starting area is a fixed reference the live area can be judged against', () => {
@@ -162,4 +207,78 @@ test('an empty territory object behaves like an untouched map', () => {
   const game = fresh();
   game.territory = createTerritory();
   assert.equal(cellsOf(game, 'jpn').length, cellsOf(fresh(), 'jpn').length);
+});
+
+// ── Conquest ────────────────────────────────────────────────────────────────
+
+test('overwhelming force takes the whole country, not a slice of it', () => {
+  // The United States against Cuba is not a contest, and the map should say so.
+  const game = createGame({ playerNationId: 'usa', difficulty: 5, seed: 'conquest', totalTurns: 40 });
+  declareWar(game, 'usa', 'cub', { rng: new Rng(3), reason: 'test' });
+
+  for (let i = 0; i < 10 && game.wars[0].active; i++) advanceTurn(game, { orders: [] });
+
+  assert.equal(game.wars[0].active, false, 'the war should have finished');
+  assert.equal(game.nations.cub.sovereign, false, 'Cuba should have been absorbed');
+  assert.equal(cellsOf(game, 'cub').length, 0, 'a conquered country holds no ground');
+  assert.equal(game.nations.cub.annexedBy, 'usa');
+  assert.ok(areaOf(game, 'usa') > startingAreaOf(game, 'usa'), 'the conqueror keeps the ground');
+});
+
+test('a conquered country stops being a player in the world', () => {
+  const game = createGame({ playerNationId: 'usa', difficulty: 5, seed: 'conquest', totalTurns: 40 });
+  declareWar(game, 'usa', 'cub', { rng: new Rng(3), reason: 'test' });
+  for (let i = 0; i < 10 && game.wars[0].active; i++) advanceTurn(game, { orders: [] });
+
+  assert.ok(!sovereignIds(game).includes('cub'));
+  assert.ok(!rankedNations(game).some((r) => r.state.id === 'cub'), 'and drops out of the rankings');
+  // …but it is still on the books, so the run can say what happened to it.
+  assert.ok(game.nations.cub, 'the record of it must survive');
+});
+
+test('near-peers fight over ground without either ceasing to exist', () => {
+  const game = createGame({ playerNationId: 'ind', difficulty: 5, seed: 'peer', totalTurns: 60 });
+  const before = areaOf(game, 'pak');
+  declareWar(game, 'ind', 'pak', { rng: new Rng(11), reason: 'test' });
+
+  // Measured during the war, not after it: a war that ends in stalemate or in
+  // catastrophe hands the occupied ground back, so the end state can legitimately
+  // match the start. What must be true is that the front moved while it ran.
+  let lowest = before;
+  for (let i = 0; i < 20 && game.wars[0].active; i++) {
+    advanceTurn(game, { orders: [] });
+    lowest = Math.min(lowest, areaOf(game, 'pak'));
+  }
+
+  assert.equal(game.nations.ind.sovereign, true);
+  assert.equal(game.nations.pak.sovereign, true, 'neither near-peer should be absorbed');
+  assert.ok(lowest < before, 'the front should have moved at some point');
+  assert.equal(game.wars[0].active, false, 'and the war should have reached an end');
+});
+
+test('annexing what you occupy makes it permanent', () => {
+  const game = createGame({ playerNationId: 'rus', difficulty: 5, seed: 'annex', totalTurns: 40 });
+  const war = declareWar(game, 'rus', 'ukr', { rng: new Rng(5), reason: 'test' });
+  advanceTurn(game, { orders: [] });
+  advanceTurn(game, { orders: [] });
+
+  const occupied = war.occupied.filter(([, , holder]) => holder === 'rus');
+  if (!occupied.length) return; // Nothing taken yet on this seed; nothing to assert.
+
+  const slots = occupied.map(([slot]) => slot);
+  const done = annexOccupied(game, war, 'rus');
+  assert.ok(done && done.cells === occupied.length);
+  assert.equal(war.occupied.filter(([, , h]) => h === 'rus').length, 0, 'it leaves the occupation list');
+
+  // A peace can no longer hand it back, because it is no longer occupied.
+  concludeWar(game, war, new Rng(7), 'exhaustion');
+  for (const slot of slots) assert.equal(ownerAt(game, slot), 'rus');
+});
+
+test('a country pushed off the map by any route is reconciled', () => {
+  const game = createGame({ playerNationId: 'usa', seed: 'reconcile' });
+  seizeAll(game, 'cub', 'usa');
+  const changes = reconcileSovereignty(game, new Rng(2));
+  assert.ok(changes.some((c) => c.id === 'cub'), 'losing every acre must be noticed');
+  assert.equal(game.nations.cub.sovereign, false);
 });

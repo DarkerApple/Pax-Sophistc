@@ -25,11 +25,15 @@ import {
 } from './state.js';
 import {
   areaOf,
+  baseCellsOf,
   carveOutlyingRegion,
   cellCentre,
   centroidOf,
   frontAnchor,
+  hasNoLand,
   landCells,
+  ownerAt,
+  seizeAll,
   setOwner,
   transferLand,
 } from './territory.js';
@@ -221,6 +225,7 @@ export function secede(game, parentId, rng, { cause = 'unrest', share = null } =
 
   const state = {
     id,
+    sovereign: true,
     gdp: Math.max(0.004, parentState.gdp * wealthShare),
     baseGrowth: def.growth,
     population: Math.max(0.4, parentState.population * peopleShare),
@@ -328,11 +333,203 @@ function seedRelationsFor(game, id, parentId, rng) {
   }
 }
 
+// ── Conquest ────────────────────────────────────────────────────────────────
+
+/**
+ * A conquered state is not deleted — the run has to be able to say what
+ * happened to it, and somebody may yet liberate it — but it stops being a
+ * player on the board. Everything that iterates countries asks this first.
+ */
+export function isSovereign(game, id) {
+  const state = game.nations[id];
+  return Boolean(state) && state.sovereign !== false;
+}
+
+/** Every country still running its own affairs. */
+export function sovereignIds(game) {
+  return Object.keys(game.nations).filter((id) => isSovereign(game, id));
+}
+
+/**
+ * Absorb a country outright: all its ground, most of its people and economy,
+ * a fraction of its army, and a very long tail of resentment.
+ *
+ * @returns {{id: string, into: string, area: number, population: number} | null}
+ */
+export function annexNation(game, victimId, conquerorId, rng, { reason = 'conquest' } = {}) {
+  const victim = game.nations[victimId];
+  const winner = game.nations[conquerorId];
+  if (!victim || !winner || victimId === conquerorId) return null;
+  if (victim.sovereign === false) return null;
+
+  const seized = seizeAll(game, victimId, conquerorId);
+
+  const people = victim.population;
+  const economy = victim.gdp;
+  // Occupation is not acquisition: a conquered economy runs at a fraction of
+  // what it did, and the army mostly goes home or into the hills.
+  winner.population += people;
+  winner.gdp += economy * (rng ? rng.float(0.45, 0.75) : 0.6);
+  winner.military = clamp(winner.military + victim.military * 0.12, 0, 100);
+  winner.influence = clamp(winner.influence + (rng ? rng.float(2, 7) : 4));
+  winner.unrest = clamp(winner.unrest + (rng ? rng.float(6, 16) : 10));
+  winner.stability = clamp(winner.stability - (rng ? rng.float(3, 9) : 6));
+
+  addOccupationBurden(game, conquerorId, victimId, rng);
+
+  victim.sovereign = false;
+  victim.annexedBy = conquerorId;
+  victim.annexedTurn = game.turn;
+  victim.gdp = 0.004;
+  victim.population = 0;
+  victim.military = 0;
+  victim.readiness = 0;
+  victim.influence = 0;
+  victim.nukes = 0;
+  victim.modifiers = [];
+
+  // Everyone else takes a view, and it is not a warm one.
+  for (const otherId of sovereignIds(game)) {
+    if (otherId === conquerorId) continue;
+    adjustRelation(game, conquerorId, otherId, -(rng ? rng.int(10, 30) : 18));
+  }
+  // Its wars are over, one way or another.
+  for (const war of game.wars) {
+    if (!war.active) continue;
+    war.attackers = war.attackers.filter((id) => id !== victimId);
+    war.defenders = war.defenders.filter((id) => id !== victimId);
+    if (!war.attackers.length || !war.defenders.length) {
+      war.active = false;
+      war.endedTurn = game.turn;
+      war.outcome = war.outcome || 'Conquest';
+    }
+  }
+
+  logEvent(game, {
+    type: 'conquest',
+    severity: 'critical',
+    text: t('statecraft.annexed',
+      '{victim} ceases to exist as an independent state. {winner} now administers all {n},000 km² of it.',
+      {
+        victim: tNation(defOf(game, victimId)),
+        winner: tNation(defOf(game, conquerorId)),
+        n: Math.round(seized.area),
+      }),
+    nations: [conquerorId, victimId],
+  });
+
+  return { id: victimId, into: conquerorId, area: seized.area, population: people, reason };
+}
+
+/** Holding somebody else's country costs you, every quarter, for years. */
+function addOccupationBurden(game, conquerorId, victimId, rng) {
+  const state = game.nations[conquerorId];
+  if (!state) return;
+  state.modifiers.push({
+    id: `occupation-${victimId}`,
+    label: 'Occupation duties',
+    turnsLeft: 16,
+    growth: -0.22,
+    stability: -0.25,
+    unrest: 1.1,
+    influence: 0,
+    readiness: -0.4,
+    tech: 0,
+    revenue: -(state.gdp * 1000 * 0.004),
+    source: 'conquest',
+  });
+  if (rng && rng.bool(0.5)) {
+    state.modifiers.push({
+      id: `insurgency-${victimId}`,
+      label: 'Insurgency in occupied territory',
+      turnsLeft: 12,
+      growth: -0.18,
+      unrest: 1.4,
+      stability: -0.3,
+      influence: 0, readiness: -0.6, tech: 0, revenue: 0,
+      source: 'conquest',
+    });
+  }
+}
+
+/**
+ * The reverse: somebody takes the ground back, and the state is on the map
+ * again. Called when a conquered country's land ends up in other hands.
+ */
+export function restoreNation(game, id, rng) {
+  const state = game.nations[id];
+  const def = defOf(game, id);
+  if (!state || !def || state.sovereign !== false) return null;
+
+  state.sovereign = true;
+  state.annexedBy = null;
+  state.gdp = Math.max(0.01, def.gdp * (rng ? rng.float(0.2, 0.45) : 0.3));
+  state.population = Math.max(0.5, def.population * (rng ? rng.float(0.6, 0.9) : 0.75));
+  state.military = clamp(def.military * (rng ? rng.float(0.1, 0.3) : 0.2), 1, 100);
+  state.readiness = clamp(def.readiness * 0.5, 5, 100);
+  state.stability = clamp(rng ? rng.float(18, 40) : 28);
+  state.unrest = clamp(rng ? rng.float(45, 72) : 58);
+  state.approval = clamp(rng ? rng.float(50, 80) : 65);
+
+  logEvent(game, {
+    type: 'conquest',
+    severity: 'major',
+    text: t('statecraft.restored', '{nation} is on the map again, governing from rubble.',
+      { nation: tNation(def) }),
+    nations: [id],
+  });
+  return { id };
+}
+
+/**
+ * Sweep for states that have lost every acre. Called once a quarter so a
+ * country pushed off the map by any route — war, secession, sale — is dealt
+ * with the same way.
+ */
+export function reconcileSovereignty(game, rng) {
+  const changes = [];
+  for (const id of Object.keys(game.nations)) {
+    const state = game.nations[id];
+    if (!state) continue;
+    const landless = hasNoLand(game, id);
+    if (state.sovereign !== false && landless) {
+      // Whoever holds the most of its former ground is the occupier.
+      const successor = largestHolderOfFormerLand(game, id);
+      if (successor) {
+        const done = annexNation(game, id, successor, rng, { reason: 'attrition' });
+        if (done) changes.push(done);
+      }
+    } else if (state.sovereign === false && !landless) {
+      const done = restoreNation(game, id, rng);
+      if (done) changes.push(done);
+    }
+  }
+  return changes;
+}
+
+function largestHolderOfFormerLand(game, id) {
+  const counts = new Map();
+  for (const slot of baseCellsOf(game, id)) {
+    const owner = ownerAt(game, slot);
+    if (!owner || owner === id) continue;
+    counts.set(owner, (counts.get(owner) || 0) + 1);
+  }
+  let best = null;
+  let bestCount = 0;
+  for (const [owner, count] of counts) {
+    if (count > bestCount) {
+      bestCount = count;
+      best = owner;
+    }
+  }
+  return best;
+}
+
 /** A state with nothing left to govern stops being a state. */
 export function isDefunct(game, id) {
   const state = game.nations[id];
   if (!state) return true;
-  return state.stability <= 0 && state.gdp <= 0.01;
+  return state.sovereign === false || (state.stability <= 0 && state.gdp <= 0.01);
 }
 
 // ── Selling and ceding ──────────────────────────────────────────────────────

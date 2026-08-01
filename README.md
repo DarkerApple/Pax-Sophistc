@@ -10,7 +10,7 @@ writes the briefings and judges your freeform orders — and every provider it s
 
 ```bash
 npm start          # http://localhost:5173
-npm test           # 101 engine, territory, AI-boundary, world-mode, map and translation tests
+npm test           # 113 engine, territory, AI-boundary, world-mode, map and translation tests
 ```
 
 There is nothing to install. `npm start` runs a ~60-line static file server from
@@ -25,10 +25,15 @@ Each turn is one **quarter**. You get a budget (a share of GDP), some **politica
 and up to **four orders**. Then the other 55 countries take their turn, the world throws
 events at you, wars grind forward, and the books get balanced.
 
-- **51 orders** across Quick, Economy, Military, Diplomacy, Domestic, Intelligence and
+- **65 orders** across Quick, Economy, Military, Diplomacy, Domestic, Intelligence and
   Technology — from `Fiscal Stimulus` and `Semiconductor Self-Sufficiency` to
-  `Covert Destabilisation` and `Military Intervention`. Six of them are one-capital
-  **Quick orders** for turns where you want to keep the budget for something else.
+  `Covert Destabilisation` and `Military Intervention`.
+- **A Quick tab that reads the room.** Eighteen one-capital quick orders, of which you are
+  shown the ones that answer *what actually happened*: `Emergency Relief Operation` after a
+  disaster, `Impose a Curfew` after a riot, `Reinforce the Front` in a war, `Draw on the
+  Reserves` when the treasury is empty, `Recognise the New State` the quarter a country
+  splits, `Open a Back Channel` when a ladder is climbing. It is a different shelf every
+  quarter, and the ones with nothing to answer are not on it.
 - **A War Room** that only appears while you are fighting: major offensives, holding
   actions, mobilisation, strikes on logistics, a total war economy. These move the front,
   the exhaustion and the casualty count directly, not just your national statistics.
@@ -51,11 +56,26 @@ events at you, wars grind forward, and the books get balanced.
 - **Five outcome tiers** per order — decisive success, success, partial, failure, backfire —
   driven by your country's real stats, not a flat dice roll. A tech-90 country runs a better
   R&D programme than a tech-40 one.
+- **Dominance is dominant.** An order aimed at somebody else is a contest, and it is decided
+  by the *ratio* of the capability it turns on, not the difference. A superpower's cyber
+  operation against a small state is a formality; the same operation the other way round is
+  close to hopeless; between peers it is a real roll. War works the same way — force ratios
+  are logarithmic, so an overwhelming advantage overwhelms in two or three quarters while
+  near-peers grind for eight.
 - **Wars** you start, get dragged into by treaty, or have declared on you. They are decided
   by force ratios, readiness, home ground and exhaustion, and they end in victory,
   stalemate, negotiated peace — or, if a losing nuclear power gets desperate enough and the
   difficulty is high enough, worse. Whoever is winning **takes ground quarter by quarter**;
-  a decisive peace keeps most of it, an exhausted one hands every acre back.
+  a decisive peace keeps it, an exhausted one hands every acre back.
+- **Conquest.** A war that is being won by an overwhelming margin does not stop at
+  "decisive" — the front keeps moving until the country is taken. An absorbed state
+  drops out of the world (it stops acting, ranking and being acted on) but stays on
+  the books, so the run can say what became of it — and if somebody takes the ground
+  back, it is on the map again. Two war-room orders put this in your hands directly:
+  **Annex the Occupied Territory** makes what you hold permanent before any peace can
+  return it, and **Demand Unconditional Surrender** refuses the negotiated end.
+  Occupation is not free: it costs growth, stability and readiness for years, and
+  every other government marks you down for it.
 - **Countries come apart.** A coup in a fragile state, or a separatist uprising in a big
   unhappy one, can carve a province off into a **new country** — with a generated name in
   both languages, a government, a doctrine, and statistics derived from the parent in
@@ -143,8 +163,11 @@ standing on.
 
 ## The map
 
-A schematic world map — coarse continent silhouettes with every country plotted at its true
-latitude and longitude, sized by live national power.
+A schematic world map — continent outlines with every country plotted at its true latitude
+and longitude, sized by live national power. The coastlines carry about a degree of detail,
+the significant islands are there, and the inland seas (the Caspian, the Black Sea, the
+Great Lakes, Baikal, the Aral) are cut out as holes rather than handed to the countries
+around them as territory.
 
 - **Zoom and pan.** Scroll or pinch to zoom, drag to pan, `+` / `−` / `0` on the keyboard, or
   jump straight to Europe, East Asia, the Middle East, the Americas or Africa. Marks keep a
@@ -153,12 +176,16 @@ latitude and longitude, sized by live national power.
   read it.
 - **Five view modes**, each with its own legend: Relations, Power, Stability, Alignment and
   Conflict.
-- **Filled territory.** Every country holds actual ground, not just a dot. The land is
-  rasterised from the continent outlines into one-degree cells and assigned to capitals by a
-  weighted fit weighted so each country's claim lands close to its real land area; land no
-  country on the roster can reach stays unclaimed. Wars, secessions and land sales move those
-  cells, so the borders you are looking at are the live state of the world. `T` turns the
-  fill off.
+- **Filled territory with real borders.** Every country holds actual ground, not just a dot.
+  The land is rasterised from the continent outlines into one-degree cells and assigned to
+  capitals by a fit tuned so each country's claim lands close to its real land area; land no
+  country on the roster can reach stays unclaimed. Those cells are then *traced* into closed
+  rings, nudged off the lattice by a hash of each corner, and corner-cut — so a border reads
+  as a frontier rather than as graph paper, and neighbours still meet exactly. Wars,
+  secessions, conquests and land sales move the cells, so what you are looking at is the live
+  state of the world. `T` turns the fill off.
+- **Drag to pan, pinch to zoom.** Dragging pans rather than sweeping a text selection across
+  every label, and two fingers zoom on a touch screen.
 - **Hover goes to the sidebar, not over the map.** Pointing at a country fills the *Country
   inspector* panel on the left; clicking pins it there, clicking again opens its full file.
   Nothing ever draws on top of the map.
@@ -172,6 +199,15 @@ eyeballed.
 
 The map is scenery, not cartography: bays, straits and small islands are absent, and no line
 on it should be read as a claim about a real border.
+
+## On a phone
+
+The three-column command screen collapses to one pane at a time with a switcher across the
+top — **Nation**, **Map**, **Briefing**, **Orders** — with the order count and any waiting
+decision badged on the tabs. The top bar becomes three scrolling strips instead of a wall of
+wrapped buttons, the map fills its box rather than letterboxing into a strip, modals become
+bottom sheets, and everything you tap is at least a finger wide. No horizontal page scroll at
+any width down to 320px.
 
 ## Themes and readability
 
@@ -338,8 +374,8 @@ src/
     difficulty.js     the slider → every knob in the simulation
     worldmodes.js     Stable / Current / Chaotic, composed with difficulty
     consequences.js   escalation ladders and chain reactions
-    territory.js      the land grid: who holds what, and how it changes hands
-    statecraft.js     secession, land sales, and changing sides
+    territory.js      the land grid, and the outlines traced out of it
+    statecraft.js     secession, conquest, land sales, and changing sides
     causes.js         why an event happened, scored against live state
     finance.js        borrowing, interest, and the emergency programme
     state.js          game construction, relations, serialisation

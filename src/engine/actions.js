@@ -212,6 +212,34 @@ export const ACTIONS = [
     },
   },
   {
+    id: 'annex-territory',
+    name: 'Annex the Occupied Territory',
+    category: 'war',
+    blurb: 'Stop calling it an occupation. Everything your army holds becomes yours, and no peace deal gives it back.',
+    cost: { pctGdp: 0.9 }, pc: 4, target: 'nation', baseSuccess: 0.72, risk: 'medium',
+    skills: [['stability', 0.16], ['influence', 0.1]], requiresWar: true, confirm: true,
+    warCommand: 'annex', tension: 8,
+    effects: {
+      success: { self: { approval: 5, unrest: 3, influence: -2 }, relation: -20, worldTension: 6 },
+      failure: { self: { approval: -6, unrest: 6, influence: -4 }, relation: -10, worldTension: 4 },
+    },
+  },
+  {
+    id: 'press-advantage',
+    name: 'Demand Unconditional Surrender',
+    category: 'war',
+    blurb: 'Refuse the negotiated end. Keep going until their government signs whatever you put in front of it.',
+    cost: { pctGdp: 1.4 }, pc: 4, target: 'nation', baseSuccess: 0.62, risk: 'high',
+    skills: [['military', 0.2], ['readiness', 0.16]], requiresWar: true, confirm: true,
+    warCommand: 'press', tension: 10,
+    warEffect: { warScore: 14, ownExhaustion: 5, casualties: 45000 },
+    warEffectOnFailure: { warScore: -4, ownExhaustion: 12, casualties: 70000 },
+    effects: {
+      success: { self: { approval: 3, readiness: -4 }, worldTension: 8 },
+      failure: { self: { approval: -8, unrest: 5, readiness: -8 }, worldTension: 6 },
+    },
+  },
+  {
     id: 'seek-peace',
     name: 'Sue for Peace',
     category: 'war',
@@ -591,6 +619,164 @@ export const ACTIONS = [
     },
   },
 
+  {
+    id: 'disaster-relief',
+    name: 'Emergency Relief Operation',
+    category: 'domestic', quick: true,
+    blurb: 'Helicopters, field hospitals, and a minister on the ground before the cameras leave.',
+    cost: { pctGdp: 0.3 }, pc: 1, target: 'none', baseSuccess: 0.82, risk: 'low',
+    skills: [['stability', 0.14], ['tech', 0.06]],
+    situational: ['disaster', 'epidemic', 'accident'],
+    effects: {
+      success: { self: { approval: 7, unrest: -5, stability: 2 } },
+      failure: { self: { approval: -5, unrest: 3 } },
+    },
+  },
+  {
+    id: 'curfew',
+    name: 'Impose a Curfew',
+    category: 'domestic', quick: true,
+    blurb: 'Clears the streets tonight. Fills them again next month.',
+    cost: { pctGdp: 0.06 }, pc: 1, target: 'none', baseSuccess: 0.76, risk: 'medium',
+    skills: [['stability', 0.16]],
+    situational: ['unrest'],
+    effects: {
+      success: { self: { unrest: -9, stability: 2, approval: -2 } },
+      failure: { self: { unrest: 6, approval: -6, stability: -3 } },
+    },
+  },
+  {
+    id: 'price-controls',
+    name: 'Cap Staple Prices',
+    category: 'economy', quick: true,
+    blurb: 'Freeze the price of bread and fuel. Popular immediately, expensive shortly afterwards.',
+    cost: { pctGdp: 0.4 }, pc: 1, target: 'none', baseSuccess: 0.8, risk: 'medium',
+    skills: [['stability', 0.1]],
+    situational: ['unrest', 'inflation'],
+    effects: {
+      success: { self: { unrest: -6, approval: 5 }, modifier: { label: 'Price controls', turns: 4, growth: -0.12 } },
+      failure: { self: { unrest: 3, approval: -3 }, modifier: { label: 'Shortages', turns: 3, growth: -0.25, unrest: 1 } },
+    },
+  },
+  {
+    id: 'draw-reserves',
+    name: 'Draw on the Reserves',
+    category: 'economy', quick: true,
+    blurb: 'Sell down the sovereign fund to cover the quarter. It buys time and nothing else.',
+    cost: { pctGdp: 0 }, pc: 1, target: 'none', baseSuccess: 0.88, risk: 'low',
+    skills: [['stability', 0.1]],
+    situational: ['debt'],
+    effects: {
+      success: { self: { treasuryPctGdp: 2.2, influence: -1 } },
+      failure: { self: { treasuryPctGdp: 0.8, approval: -3, influence: -2 } },
+    },
+  },
+  {
+    id: 'emergency-budget',
+    name: 'Emergency Budget',
+    category: 'economy', quick: true,
+    blurb: 'Reopen the books mid-year and cut what can be cut. Nobody thanks you for it.',
+    cost: { pctGdp: 0 }, pc: 2, target: 'none', baseSuccess: 0.72, risk: 'medium',
+    skills: [['stability', 0.18]],
+    situational: ['debt'],
+    effects: {
+      success: { self: { treasuryPctGdp: 1.4, approval: -5, unrest: 3 }, modifier: { label: 'Fiscal consolidation', turns: 4, growth: -0.1, revenue: 0 } },
+      failure: { self: { approval: -9, unrest: 6 } },
+    },
+  },
+  {
+    id: 'reinforce-front',
+    name: 'Reinforce the Front',
+    category: 'military', quick: true,
+    blurb: 'Everything on rails, moving east, tonight. Not a plan — a stopgap.',
+    cost: { pctGdp: 0.5 }, pc: 1, target: 'none', baseSuccess: 0.8, risk: 'low',
+    skills: [['readiness', 0.18]],
+    situational: ['war'], requiresWar: true,
+    warEffect: { warScore: 6, ownExhaustion: 3, casualties: 9000 },
+    effects: {
+      success: { self: { readiness: 3, approval: 2 } },
+      failure: { self: { readiness: -3, unrest: 2 } },
+    },
+  },
+  {
+    id: 'recognise-state',
+    name: 'Recognise the New State',
+    category: 'diplomacy', quick: true,
+    blurb: 'Be first through the door. Cheap, and it buys a friendship nobody else has yet.',
+    cost: { pctGdp: 0.04 }, pc: 1, target: 'nation', baseSuccess: 0.85, risk: 'low',
+    skills: [['influence', 0.14]],
+    situational: ['newState'],
+    effects: {
+      success: { relation: 30, self: { influence: 2 }, worldTension: 2 },
+      failure: { relation: 8, self: { influence: -1 } },
+    },
+  },
+  {
+    id: 'close-border',
+    name: 'Close the Border',
+    category: 'domestic', quick: true,
+    blurb: 'Shut the crossings with whatever is happening next door before it walks in.',
+    cost: { pctGdp: 0.2 }, pc: 1, target: 'nation', baseSuccess: 0.84, risk: 'low',
+    skills: [['stability', 0.12]],
+    situational: ['neighbourCrisis', 'epidemic'],
+    effects: {
+      success: { self: { unrest: -3, approval: 4 }, relation: -12 },
+      failure: { self: { unrest: 2, approval: -2 }, relation: -8 },
+    },
+  },
+  {
+    id: 'raise-alert',
+    name: 'Raise the Alert State',
+    category: 'military', quick: true,
+    blurb: 'Leave and cancel, everyone back to their units. It is read everywhere as a message.',
+    cost: { pctGdp: 0.22 }, pc: 1, target: 'none', baseSuccess: 0.86, risk: 'low',
+    skills: [['readiness', 0.16]],
+    situational: ['escalation', 'tension'],
+    effects: {
+      success: { self: { readiness: 6, approval: 1 }, worldTension: 3 },
+      failure: { self: { readiness: 2, unrest: 2 }, worldTension: 4 },
+    },
+  },
+  {
+    id: 'back-channel',
+    name: 'Open a Back Channel',
+    category: 'diplomacy', quick: true,
+    blurb: 'One trusted person, one unminuted meeting. The cheapest way down a ladder.',
+    cost: { pctGdp: 0.05 }, pc: 1, target: 'nation', baseSuccess: 0.68, risk: 'low',
+    skills: [['influence', 0.2]],
+    situational: ['escalation'],
+    effects: {
+      success: { relation: 14, worldTension: -4, self: { influence: 1 } },
+      failure: { relation: -3, self: { approval: -1 } },
+    },
+  },
+  {
+    id: 'state-funeral',
+    name: 'Lead the National Mourning',
+    category: 'domestic', quick: true,
+    blurb: 'Be the person who says the right thing on the worst day. It is not nothing.',
+    cost: { pctGdp: 0.03 }, pc: 1, target: 'none', baseSuccess: 0.86, risk: 'low',
+    skills: [['approval', 0.14]],
+    situational: ['casualties'],
+    effects: {
+      success: { self: { approval: 6, unrest: -3, stability: 1 } },
+      failure: { self: { approval: -4, unrest: 2 } },
+    },
+  },
+  {
+    id: 'blame-foreigners',
+    name: 'Name a Foreign Hand',
+    category: 'domestic', quick: true,
+    blurb: 'Point at somebody abroad. It works at home, and it costs you abroad.',
+    cost: { pctGdp: 0.02 }, pc: 1, target: 'nation', baseSuccess: 0.74, risk: 'medium',
+    skills: [['approval', 0.1], ['influence', 0.06]],
+    situational: ['unrest', 'escalation'],
+    effects: {
+      success: { self: { approval: 6, unrest: -4 }, relation: -16, worldTension: 4 },
+      failure: { self: { approval: -5, unrest: 4, influence: -2 }, relation: -10, worldTension: 3 },
+    },
+  },
+
   // ─── More ways to grow ────────────────────────────────────────────────────
   {
     id: 'deregulate',
@@ -762,9 +948,93 @@ export const ACTIONS_BY_ID = Object.fromEntries(ACTIONS.map((a) => [a.id, a]));
 
 /** Money cost in billions USD for a given nation. */
 /** The Quick tab is a view across categories, not a category of its own. */
-export function actionsInCategory(categoryId) {
-  if (categoryId === 'quick') return ACTIONS.filter((a) => a.quick);
+export function actionsInCategory(categoryId, game = null) {
+  if (categoryId === 'quick') {
+    const quick = ACTIONS.filter((a) => a.quick);
+    return game ? rankQuick(game, quick) : quick;
+  }
   return ACTIONS.filter((a) => a.category === categoryId);
+}
+
+/**
+ * What the world looks like right now, as a set of situation tags.
+ *
+ * Quick orders declare the situations they answer; this is what decides which
+ * ones are on the table. The Quick tab used to be the same six cards for forty
+ * quarters — now it is the shortlist a chief of staff would actually put in
+ * front of you given what just happened.
+ */
+export function situationTags(game) {
+  const tags = new Set();
+  const state = game.nations[game.playerId];
+  if (!state) return tags;
+
+  if (state.unrest > 45) tags.add('unrest');
+  if (state.unrest > 62) tags.add('inflation');
+  if (state.treasury < 0 || state.treasury < state.gdp * 8) tags.add('debt');
+  if (game.worldTension > 62) tags.add('tension');
+
+  const wars = game.wars.filter(
+    (w) => w.active && (w.attackers.includes(game.playerId) || w.defenders.includes(game.playerId)),
+  );
+  if (wars.length) {
+    tags.add('war');
+    if (wars.some((w) => w.casualties > 60_000)) tags.add('casualties');
+  }
+
+  // Whatever the last quarter actually threw at you.
+  for (const entry of (game.log || [])) {
+    if (entry.turn < game.turn - 1) continue;
+    if (entry.type === 'secession') tags.add('newState');
+    if (entry.type === 'conquest') tags.add('neighbourCrisis');
+  }
+  for (const report of (game.turnReports || []).slice(-1)) {
+    for (const title of report.events || []) {
+      const key = String(title).toLowerCase();
+      if (/disaster|earthquake|flood|cyclone|wildfire|harvest/.test(key)) tags.add('disaster');
+      if (/epidemic|pandemic/.test(key)) tags.add('epidemic');
+      if (/accident|plant|industrial/.test(key)) tags.add('accident');
+      if (/riot|protest|strike/.test(key)) tags.add('unrest');
+      if (/coup|assassination|attack/.test(key)) tags.add('neighbourCrisis');
+      if (/currency/.test(key)) tags.add('inflation');
+    }
+  }
+
+  // A ladder you are standing on is a situation whether or not anything fired.
+  for (const key of Object.keys(game.escalation || {})) {
+    if (!key.includes(game.playerId)) continue;
+    if ((game.escalation[key] || 0) >= 3.5) {
+      tags.add('escalation');
+      break;
+    }
+  }
+  return tags;
+}
+
+/**
+ * Quick orders that answer something happening now, first; the standing ones
+ * that always make sense after; and the ones that answer nothing at all left
+ * off entirely. Deterministic — the same quarter always offers the same shelf.
+ */
+function rankQuick(game, quick) {
+  const tags = situationTags(game);
+  const scored = [];
+  for (const action of quick) {
+    const wants = action.situational;
+    if (!wants) {
+      scored.push({ action, score: 0 });
+      continue;
+    }
+    const hits = wants.filter((tag) => tags.has(tag)).length;
+    // A situational order with nothing to answer is noise on the shelf.
+    if (!hits) continue;
+    scored.push({ action, score: hits * 10 + wants.length });
+  }
+  // Capped, because a "quick" shelf of eighteen cards is not a quick shelf.
+  return scored
+    .sort((a, b) => b.score - a.score || a.action.id.localeCompare(b.action.id))
+    .slice(0, 10)
+    .map((entry) => entry.action);
 }
 
 export function actionCost(action, nationState) {

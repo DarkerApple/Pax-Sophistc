@@ -5,7 +5,7 @@ import { NATIONS_BY_ID } from '../data/nations.js';
 import { ACTIONS_BY_ID, actionCost } from './actions.js';
 import { applyEffect, describeChanges, scaleEffect } from './effects.js';
 import { clamp, getRelation, logEvent } from './state.js';
-import { concludeWar, declareWar, findWar } from './war.js';
+import { annexOccupied, concludeWar, declareWar, findWar, pressWar } from './war.js';
 
 /** The first war this country is fighting, for orders that need no target. */
 function activeWarFor(game, id) {
@@ -42,9 +42,16 @@ export function successChance(game, action, actorId, targetId, mods) {
       if (action.relationFloor !== undefined && relation < action.relationFloor) {
         chance -= (action.relationFloor - relation) / 120;
       }
-    } else if (action.covert) {
-      chance -= ((game.nations[targetId].tech - 50) / 50) * 0.16;
-      chance -= ((game.nations[targetId].stability - 50) / 50) * 0.08;
+    } else {
+      // An order aimed at somebody else is a contest, and the gap in whatever
+      // it actually turns on decides it. A country far ahead on the relevant
+      // capability should not merely edge the roll — it should be expected to
+      // win, and the interface should say so before you commit.
+      chance += capabilityEdge(game, action, state, game.nations[targetId]);
+      if (action.covert) {
+        chance -= ((game.nations[targetId].tech - 50) / 50) * 0.16;
+        chance -= ((game.nations[targetId].stability - 50) / 50) * 0.08;
+      }
     }
   }
 
@@ -53,6 +60,30 @@ export function successChance(game, action, actorId, targetId, mods) {
   chance -= Math.max(0, (45 - state.stability) / 100) * 0.3;
 
   return clamp(chance, 0.03, 0.97);
+}
+
+/**
+ * How far ahead the actor is on the capability the order rests on, as a
+ * probability adjustment. Saturating, so a tenfold lead is decisive without
+ * making the number meaningless: ±0.34 at the extremes.
+ */
+function capabilityEdge(game, action, actor, target) {
+  const skills = action.skills || [];
+  if (!skills.length) return 0;
+
+  let edge = 0;
+  let weightSum = 0;
+  for (const [stat, weight] of skills) {
+    const mine = (actor[stat] ?? 50) + 6;
+    const theirs = (target[stat] ?? 50) + 6;
+    // Ratio, not difference: 90 against 30 is a rout; 90 against 80 is a nudge.
+    edge += Math.log2(mine / theirs) * weight;
+    weightSum += weight;
+  }
+  if (weightSum <= 0) return 0;
+
+  const normalised = edge / weightSum;
+  return Math.max(-0.34, Math.min(0.34, normalised * 0.42));
 }
 
 function tierFor(chance, roll, action) {
@@ -159,6 +190,27 @@ export function resolveAction(game, rng, mods, order, actorId = game.playerId) {
   }
 
   // War-room orders move the front itself, not just the national statistics.
+  if (action.warCommand && succeeded) {
+    const war = targetId ? findWar(game, actorId, targetId) : activeWarFor(game, actorId);
+    if (war) {
+      if (action.warCommand === 'annex') {
+        const done = annexOccupied(game, war, actorId);
+        outcome.ground = done;
+        if (done) {
+          outcome.notes.push(
+            `${Math.round(done.area).toLocaleString()},000 km² is now sovereign territory, not occupied territory.`,
+          );
+        } else {
+          outcome.notes.push('Your forces hold nothing to annex yet.');
+        }
+      }
+      if (action.warCommand === 'press') {
+        pressWar(game, war, actorId);
+        outcome.notes.push('No negotiated end will be accepted this quarter.');
+      }
+    }
+  }
+
   if (action.warEffect || action.warEffectOnFailure) {
     const war = targetId ? findWar(game, actorId, targetId) : activeWarFor(game, actorId);
     if (war) {

@@ -8,7 +8,7 @@ import { runOpponents } from './opponents.js';
 import { decayLadders, domesticBlowback, playerLadders, resolveConsequences } from './consequences.js';
 import { availableFunds, creditLimit, debtOf, serviceDebt } from './finance.js';
 import { resolveAction, resolveDecision } from './resolve.js';
-import { driftAlignments } from './statecraft.js';
+import { driftAlignments, reconcileSovereignty } from './statecraft.js';
 import {
   QUARTERS,
   activeWarsFor,
@@ -16,10 +16,13 @@ import {
   clamp,
   dateLabel,
   defOf,
+  isSovereign,
   getRelation,
   livePower,
   logEvent,
   rankedNations,
+  sovereignIds,
+  sovereignStates,
   withRng,
 } from './state.js';
 import { tickWars } from './war.js';
@@ -127,8 +130,11 @@ export function advanceTurn(game, { orders = [], decisionChoice = null } = {}) {
       report.newDecision = rolled.decision;
     }
 
-    // 5. Wars grind on.
+    // 5. Wars grind on, and then the map is reconciled: anyone pushed off it
+    //    entirely stops being a country, anyone who gets their ground back is
+    //    one again.
     report.wars = tickWars(game, rng, mods);
+    report.sovereignty = reconcileSovereignty(game, rng);
 
     // 6. Books, modifiers, drift.
     report.economy = economyTick(game, rng, mods);
@@ -218,7 +224,7 @@ function economyTick(game, rng, mods) {
   // A mild global cycle so the world is not a metronome.
   game.globalGrowth = clamp(game.globalGrowth + rng.normal(0, 0.06), 0.6, 1.4);
 
-  for (const state of Object.values(game.nations)) {
+  for (const state of sovereignStates(game)) {
     const isPlayer = state.id === game.playerId;
 
     // Modifiers decay and contribute.
@@ -313,12 +319,12 @@ function economyTick(game, rng, mods) {
     summary.worldGrowth += growth;
   }
 
-  summary.worldGrowth = Number((summary.worldGrowth / Object.keys(game.nations).length).toFixed(2));
+  summary.worldGrowth = Number((summary.worldGrowth / Math.max(1, sovereignIds(game).length)).toFixed(2));
   return summary;
 }
 
 function relationDrift(game, rng, mods) {
-  const ids = Object.keys(game.nations);
+  const ids = sovereignIds(game);
   // Sample rather than sweep: 60 pairs a turn is plenty of movement.
   for (let i = 0; i < 60; i++) {
     const a = rng.pick(ids);
@@ -348,6 +354,20 @@ function tensionDrift(game, rng, mods) {
 function checkEndgame(game, mods) {
   const player = game.nations[game.playerId];
   const def = NATIONS_BY_ID[game.playerId];
+
+  // Being conquered outright ends the run whatever the statistics say.
+  if (!isSovereign(game, game.playerId)) {
+    const conqueror = defOf(game, player.annexedBy);
+    return {
+      status: 'defeat',
+      kind: 'conquest',
+      title: 'Conquered',
+      summary: conqueror
+        ? `${def.name} is occupied in its entirety. ${conqueror.name} administers what is left of it from ${dateLabel(game)}.`
+        : `${def.name} is occupied in its entirety and ceases to exist as an independent state in ${dateLabel(game)}.`,
+      score: scoreRun(game, mods, { collapsed: true }),
+    };
+  }
 
   if (player.stability <= 6 || (player.stability < 22 && player.unrest > 88)) {
     return {

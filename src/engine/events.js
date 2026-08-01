@@ -7,13 +7,23 @@
 
 import { BLOCS, NATIONS_BY_ID } from '../data/nations.js';
 import { causeFor } from './causes.js';
-import { activeWarsFor, blocsOf, clamp, defOf, getRelation, livePower, rankedNations } from './state.js';
+import {
+  activeWarsFor,
+  blocsOf,
+  clamp,
+  defOf,
+  getRelation,
+  livePower,
+  rankedNations,
+  sovereignIds,
+  sovereignStates,
+} from './state.js';
 import { joinableBlocs, realign, secede } from './statecraft.js';
 import { areaOf, neighboursOf } from './territory.js';
 import { t, tNation } from '../i18n/index.js';
 
 const anyNation = (game, rng, filter = () => true) => {
-  const pool = Object.values(game.nations).filter((n) => filter(n, NATIONS_BY_ID[n.id]));
+  const pool = sovereignStates(game).filter((n) => filter(n, NATIONS_BY_ID[n.id]));
   return pool.length ? rng.pick(pool) : null;
 };
 
@@ -77,7 +87,7 @@ export const EVENTS = [
     title: 'Research Breakthrough',
     weight: 1.0,
     pick: (game, rng) =>
-      rng.weighted(Object.values(game.nations), (n) => Math.max(0.1, (n.tech - 45) ** 1.6 / 200)),
+      rng.weighted(sovereignStates(game), (n) => Math.max(0.1, (n.tech - 45) ** 1.6 / 200)),
     build: (game, rng, nation) => ({
       text: `${NATIONS_BY_ID[nation.id].name} announces a breakthrough with clear commercial and defence applications.`,
       self: { tech: rng.float(2, 4), influence: 1.5 },
@@ -91,7 +101,7 @@ export const EVENTS = [
     weight: 1.1,
     domain: 'disaster',
     pick: (game, rng) =>
-      rng.weighted(Object.values(game.nations), (n) => {
+      rng.weighted(sovereignStates(game), (n) => {
         const def = NATIONS_BY_ID[n.id];
         return 1 + ((def.tags || []).includes('climate-exposed') || (def.tags || []).includes('delta') ? 2.5 : 0);
       }),
@@ -122,7 +132,7 @@ export const EVENTS = [
     weight: 1.4,
     domain: 'unrest',
     pick: (game, rng) =>
-      rng.weighted(Object.values(game.nations), (n) => Math.max(0.05, ((n.unrest - 35) / 12) ** 2)),
+      rng.weighted(sovereignStates(game), (n) => Math.max(0.05, ((n.unrest - 35) / 12) ** 2)),
     build: (game, rng, nation) => {
       const crowd = Math.round(rng.float(0.08, 2.4) * Math.max(4, nation.population) * 10) / 10;
       const cities = rng.int(3, 34);
@@ -140,7 +150,7 @@ export const EVENTS = [
     weight: 1.2,
     domain: 'riot',
     pick: (game, rng) =>
-      rng.weighted(Object.values(game.nations), (n) => risk(((n.unrest - 45) / 10) ** 2)),
+      rng.weighted(sovereignStates(game), (n) => risk(((n.unrest - 45) / 10) ** 2)),
     build: (game, rng, nation) => {
       const nights = rng.int(2, 9);
       const arrests = Math.round(rng.float(0.4, 14) * 1000);
@@ -165,7 +175,7 @@ export const EVENTS = [
     weight: 0.8,
     domain: 'epidemic',
     pick: (game, rng) =>
-      rng.weighted(Object.values(game.nations), (n) =>
+      rng.weighted(sovereignStates(game), (n) =>
         risk((80 - n.tech) / 30 + n.population / 300)),
     build: (game, rng, nation) => {
       const disease = rng.pick([
@@ -199,7 +209,7 @@ export const EVENTS = [
     weight: 0.7,
     domain: 'accident',
     pick: (game, rng) =>
-      rng.weighted(Object.values(game.nations), (n) =>
+      rng.weighted(sovereignStates(game), (n) =>
         risk((100 - n.tech) / 45 + (n.sanctionedBy?.length ? 1.4 : 0) + (n.treasury < 0 ? 0.8 : 0))),
     build: (game, rng, nation) => {
       const severe = rng.bool(0.3);
@@ -229,7 +239,7 @@ export const EVENTS = [
     weight: 0.8,
     domain: 'accident',
     pick: (game, rng) =>
-      rng.weighted(Object.values(game.nations), (n) => risk((90 - n.tech) / 40 + n.population / 400)),
+      rng.weighted(sovereignStates(game), (n) => risk((90 - n.tech) / 40 + n.population / 400)),
     build: (game, rng, nation) => {
       const site = rng.pick([
         ['chemical', 'A chemical plant'],
@@ -255,7 +265,7 @@ export const EVENTS = [
     weight: 0.6,
     domain: 'coup',
     pick: (game, rng) => {
-      const pool = Object.values(game.nations).filter((n) => n.stability < 45 && n.unrest > 45);
+      const pool = sovereignStates(game).filter((n) => n.stability < 45 && n.unrest > 45);
       return pool.length ? rng.weighted(pool, (n) => (50 - n.stability) / 10) : null;
     },
     build: (game, rng, nation) => {
@@ -316,7 +326,7 @@ export const EVENTS = [
     weight: (game) => (game.worldTension > 45 ? 0.55 : 0.35),
     domain: 'separatist',
     pick: (game, rng) => {
-      const pool = Object.values(game.nations).filter(
+      const pool = sovereignStates(game).filter(
         (n) => n.unrest > 52 && n.stability < 52 && areaOf(game, n.id) > 120,
       );
       return pool.length ? rng.weighted(pool, (n) => risk((n.unrest - 50) / 8 + (55 - n.stability) / 10)) : null;
@@ -339,7 +349,7 @@ export const EVENTS = [
     weight: 0.9,
     domain: 'strike',
     pick: (game, rng) =>
-      rng.weighted(Object.values(game.nations), (n) => risk((n.unrest - 30) / 14 + (n.treasury < 0 ? 1 : 0))),
+      rng.weighted(sovereignStates(game), (n) => risk((n.unrest - 30) / 14 + (n.treasury < 0 ? 1 : 0))),
     build: (game, rng, nation) => {
       const days = rng.int(2, 21);
       const workers = Math.round(rng.float(0.3, 6) * Math.max(3, nation.population) * 10) / 10;
@@ -358,7 +368,7 @@ export const EVENTS = [
     weight: 0.8,
     domain: 'economic',
     pick: (game, rng) =>
-      rng.weighted(Object.values(game.nations), (n) =>
+      rng.weighted(sovereignStates(game), (n) =>
         risk((n.treasury < 0 ? 3 : 0) + (60 - n.stability) / 30)),
     build: (game, rng, nation) => {
       const fall = rng.int(11, 62);
@@ -378,7 +388,7 @@ export const EVENTS = [
     weight: 0.8,
     domain: 'disaster',
     pick: (game, rng) =>
-      rng.weighted(Object.values(game.nations), (n) => {
+      rng.weighted(sovereignStates(game), (n) => {
         const def = NATIONS_BY_ID[n.id];
         return risk(1 + ((def.tags || []).some((tg) => /grain|agri|climate|breadbasket/.test(tg)) ? 2.4 : 0));
       }),
@@ -400,7 +410,7 @@ export const EVENTS = [
     weight: 0.4,
     domain: 'political',
     pick: (game, rng) =>
-      rng.weighted(Object.values(game.nations), (n) => risk((70 - n.stability) / 25)),
+      rng.weighted(sovereignStates(game), (n) => risk((70 - n.stability) / 25)),
     build: (game, rng, nation) => {
       const def = NATIONS_BY_ID[nation.id];
       const survives = rng.bool(0.45);
@@ -423,7 +433,7 @@ export const EVENTS = [
     weight: 0.8,
     domain: 'political',
     pick: (game, rng) =>
-      rng.weighted(Object.values(game.nations), (n) => risk(n.unrest / 45 + n.population / 400)),
+      rng.weighted(sovereignStates(game), (n) => risk(n.unrest / 45 + n.population / 400)),
     build: (game, rng, nation) => {
       const dead = rng.int(8, 340);
       const injured = Math.round(dead * rng.float(2, 9));
@@ -442,7 +452,7 @@ export const EVENTS = [
     weight: 0.7,
     domain: 'political',
     pick: (game, rng) => {
-      const pool = Object.values(game.nations).filter(
+      const pool = sovereignStates(game).filter(
         (n) => n.id !== game.playerId && (joinableBlocs(game, n.id).length || blocsOf(game, n.id).length),
       );
       return pool.length ? rng.pick(pool) : null;
@@ -472,7 +482,7 @@ export const EVENTS = [
     weight: (game) => 1.0 + game.worldTension / 45,
     pickPair: (game, rng) => {
       const pairs = [];
-      const nations = Object.values(game.nations);
+      const nations = sovereignStates(game);
       for (let i = 0; i < nations.length; i++) {
         for (let j = i + 1; j < nations.length; j++) {
           const rel = getRelation(game, nations[i].id, nations[j].id);
@@ -495,7 +505,7 @@ export const EVENTS = [
     weight: 0.9,
     pickPair: (game, rng) => {
       const pairs = [];
-      const nations = Object.values(game.nations);
+      const nations = sovereignStates(game);
       for (let i = 0; i < nations.length; i++) {
         for (let j = i + 1; j < nations.length; j++) {
           if (getRelation(game, nations[i].id, nations[j].id) > 60) pairs.push([nations[i], nations[j], 1]);
@@ -563,7 +573,7 @@ export const EVENTS = [
     title: 'Alignment Reversal',
     weight: 1.6,
     pickPair: (game, rng) => {
-      const nations = Object.values(game.nations);
+      const nations = sovereignStates(game);
       const a = rng.pick(nations);
       const b = rng.pick(nations.filter((n) => n.id !== a.id));
       return a && b ? [a, b, 1] : null;
@@ -611,7 +621,7 @@ export const EVENTS = [
     chaosOnly: true,
     title: 'State Failure',
     weight: 1.3,
-    pick: (game, rng) => rng.weighted(Object.values(game.nations), (n) => Math.max(0.2, (70 - n.stability) / 8)),
+    pick: (game, rng) => rng.weighted(sovereignStates(game), (n) => Math.max(0.2, (70 - n.stability) / 8)),
     build: (game, rng, nation) => ({
       text: `Central authority in ${NATIONS_BY_ID[nation.id].name} simply stops functioning. Ministries answer to nobody and the currency goes with it.`,
       self: {
@@ -629,7 +639,7 @@ export const EVENTS = [
     chaosOnly: true,
     title: 'Improbable Windfall',
     weight: 1.0,
-    pick: (game, rng) => rng.pick(Object.values(game.nations)),
+    pick: (game, rng) => rng.pick(sovereignStates(game)),
     build: (game, rng, nation) => ({
       text: `A discovery, a settlement, or an accident of timing hands ${NATIONS_BY_ID[nation.id].name} a fortune it did nothing to earn.`,
       self: { influence: rng.float(1, 4), gdpPct: rng.float(1, 3.5), approval: rng.float(2, 6) },
@@ -654,13 +664,13 @@ export const EVENTS = [
     kind: 'decision',
     title: 'Ultimatum Received',
     weight: (game) => {
-      const hostile = Object.values(game.nations).filter(
+      const hostile = sovereignStates(game).filter(
         (n) => n.id !== game.playerId && getRelation(game, game.playerId, n.id) < -45,
       );
       return hostile.length ? 1.3 : 0;
     },
     build: (game, rng) => {
-      const hostile = Object.values(game.nations).filter(
+      const hostile = sovereignStates(game).filter(
         (n) => n.id !== game.playerId && getRelation(game, game.playerId, n.id) < -45,
       );
       const rival = rng.weighted(hostile, (n) => livePower(game, n.id));
@@ -737,7 +747,7 @@ export const EVENTS = [
     title: 'Defector Requests Asylum',
     weight: 0.8,
     build: (game, rng) => {
-      const others = Object.values(game.nations).filter((n) => n.id !== game.playerId);
+      const others = sovereignStates(game).filter((n) => n.id !== game.playerId);
       const source = rng.weighted(others, (n) => livePower(game, n.id));
       if (!source) return null;
       return {
@@ -845,13 +855,13 @@ export const EVENTS = [
     kind: 'decision',
     title: 'Neighbouring Regime Collapses',
     weight: (game) => {
-      const fragile = Object.values(game.nations).filter(
+      const fragile = sovereignStates(game).filter(
         (n) => n.id !== game.playerId && n.stability < 40,
       );
       return fragile.length ? 0.9 : 0;
     },
     build: (game, rng) => {
-      const fragile = Object.values(game.nations).filter(
+      const fragile = sovereignStates(game).filter(
         (n) => n.id !== game.playerId && n.stability < 40,
       );
       const target = rng.pick(fragile);
@@ -1065,7 +1075,7 @@ function scaleStats(block, factor) {
 /** Apply a global event's spread across every nation. */
 export function applyGlobalEvent(game, entry) {
   const severity = entry.severity || 1;
-  for (const state of Object.values(game.nations)) {
+  for (const state of sovereignStates(game)) {
     const def = NATIONS_BY_ID[state.id];
     let growth = (entry.global?.growth || 0) * severity;
     const favoured = (entry.favoured || []).some((tag) => def.tags.includes(tag));
