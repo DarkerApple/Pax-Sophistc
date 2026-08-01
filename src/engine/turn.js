@@ -244,41 +244,15 @@ function economyTick(game, rng, mods) {
     }
     state.modifiers = state.modifiers.filter((m) => m.turnsLeft > 0);
 
-    const wars = activeWarsFor(game, state.id);
-    const warDrag = wars.length * -0.35;
-    const stabilityEffect = (state.stability - 60) / 300;
-    const unrestEffect = -Math.max(0, state.unrest - 35) / 130;
-    const techEffect = (state.tech - 55) / 800;
-
-    // Stimulus programmes stack with diminishing returns — you cannot simply
-    // buy a permanent boom by queueing growth modifiers every quarter.
-    const effectiveMods = Math.sign(modGrowth) * 0.62 * Math.sqrt(Math.abs(modGrowth) / 0.62);
-
-    // Convergence: rich economies do not grow like developing ones.
-    const perCapita = (state.gdp / Math.max(state.population, 0.1)) * 1e6;
-    const convergence = -0.4 * Math.log10(Math.max(1, perCapita / 18000));
-
-    let growth =
-      (state.baseGrowth +
-        effectiveMods +
-        stabilityEffect +
-        unrestEffect +
-        techEffect +
-        convergence +
-        warDrag) *
-      game.globalGrowth;
-    if (isPlayer) growth *= mods.growthMultiplier;
+    const outlook = growthOutlook(game, state.id, mods);
+    const { drivers } = outlook;
+    let growth = outlook.growth;
     growth += rng.normal(0, 0.08);
 
     state.gdp = Math.max(0.004, state.gdp * (1 + growth / 100));
 
     // Revenue and standing costs.
-    const collectionEfficiency = clamp(0.55 + state.stability / 140, 0.4, 1.15);
-    let revenue = state.gdp * 1000 * REVENUE_RATE * collectionEfficiency;
-    if (isPlayer) revenue *= mods.budgetMultiplier;
-    for (const mod of state.modifiers) revenue += mod.revenue || 0;
-
-    const upkeep = state.gdp * 1000 * MILITARY_UPKEEP * (state.military / 60);
+    const { revenue, upkeep } = ledgerFor(game, state.id, mods);
     state.treasury = state.treasury + revenue - upkeep;
 
     // Deficits are financed, not magicked away.
@@ -304,18 +278,7 @@ function economyTick(game, rng, mods) {
       summary.playerUpkeep = Math.round(upkeep);
       // What actually moved the number, so the briefing can explain itself
       // instead of just reporting a percentage.
-      summary.drivers = [
-        { label: 'underlying trend', value: state.baseGrowth },
-        { label: 'your programmes', value: effectiveMods },
-        { label: 'institutional strength', value: stabilityEffect },
-        { label: 'unrest', value: unrestEffect },
-        { label: 'technology', value: techEffect },
-        { label: 'the size you already are', value: convergence },
-        { label: 'the war', value: warDrag },
-      ]
-        .filter((d) => Math.abs(d.value) >= 0.03)
-        .sort((a, b) => Math.abs(b.value) - Math.abs(a.value))
-        .map((d) => ({ ...d, value: Number(d.value.toFixed(2)) }));
+      summary.drivers = drivers;
       summary.modifierCount = state.modifiers.length;
       summary.credit = Math.round(creditLimit(state));
       summary.available = Math.round(availableFunds(state));
@@ -325,6 +288,85 @@ function economyTick(game, rng, mods) {
 
   summary.worldGrowth = Number((summary.worldGrowth / Math.max(1, sovereignIds(game).length)).toFixed(2));
   return summary;
+}
+
+/**
+ * What this country's economy is set up to do next quarter, and why.
+ *
+ * The same arithmetic the quarter itself runs, minus the dice — so the
+ * interface can show a player where their growth is coming from *before* they
+ * commit, instead of explaining it afterwards. Pure: it reads the state and
+ * changes nothing.
+ *
+ * @returns {{growth: number, drivers: Array<{label: string, value: number}>}}
+ */
+export function growthOutlook(game, id, mods = gameModifiers(game)) {
+  const state = game.nations[id];
+  if (!state) return { growth: 0, drivers: [] };
+  const isPlayer = id === game.playerId;
+
+  let modGrowth = 0;
+  for (const mod of state.modifiers) modGrowth += mod.growth || 0;
+
+  const warDrag = activeWarsFor(game, id).length * -0.35;
+  const stabilityEffect = (state.stability - 60) / 300;
+  const unrestEffect = -Math.max(0, state.unrest - 35) / 130;
+  const techEffect = (state.tech - 55) / 800;
+
+  // Stimulus programmes stack with diminishing returns — you cannot simply
+  // buy a permanent boom by queueing growth modifiers every quarter.
+  const effectiveMods = Math.sign(modGrowth) * 0.62 * Math.sqrt(Math.abs(modGrowth) / 0.62);
+
+  // Convergence: rich economies do not grow like developing ones.
+  const perCapita = (state.gdp / Math.max(state.population, 0.1)) * 1e6;
+  const convergence = -0.4 * Math.log10(Math.max(1, perCapita / 18000));
+
+  let growth =
+    (state.baseGrowth +
+      effectiveMods +
+      stabilityEffect +
+      unrestEffect +
+      techEffect +
+      convergence +
+      warDrag) *
+    game.globalGrowth;
+  if (isPlayer) growth *= mods.growthMultiplier;
+
+  const drivers = [
+    { label: 'underlying trend', value: state.baseGrowth },
+    { label: 'your programmes', value: effectiveMods },
+    { label: 'institutional strength', value: stabilityEffect },
+    { label: 'unrest', value: unrestEffect },
+    { label: 'technology', value: techEffect },
+    { label: 'the size you already are', value: convergence },
+    { label: 'the war', value: warDrag },
+  ]
+    .filter((d) => Math.abs(d.value) >= 0.03)
+    .sort((a, b) => Math.abs(b.value) - Math.abs(a.value))
+    .map((d) => ({ ...d, value: Number(d.value.toFixed(2)) }));
+
+  return { growth, drivers };
+}
+
+/**
+ * The quarter's books: what the state collects and what standing forces cost
+ * it before a single order is issued.
+ *
+ * @returns {{revenue: number, upkeep: number, net: number, collection: number}}
+ */
+export function ledgerFor(game, id, mods = gameModifiers(game)) {
+  const state = game.nations[id];
+  if (!state) return { revenue: 0, upkeep: 0, net: 0, collection: 0 };
+
+  // A state that cannot govern cannot collect, which is why failing countries
+  // go broke faster than their economies shrink.
+  const collection = clamp(0.55 + state.stability / 140, 0.4, 1.15);
+  let revenue = state.gdp * 1000 * REVENUE_RATE * collection;
+  if (id === game.playerId) revenue *= mods.budgetMultiplier;
+  for (const mod of state.modifiers) revenue += mod.revenue || 0;
+
+  const upkeep = state.gdp * 1000 * MILITARY_UPKEEP * (state.military / 60);
+  return { revenue, upkeep, net: revenue - upkeep, collection };
 }
 
 function relationDrift(game, rng, mods) {

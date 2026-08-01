@@ -100,6 +100,9 @@ function chooseTarget(game, rng, actorId, action) {
 function candidateActions(game, state, mods) {
   return ACTIONS.filter((action) => {
     if (action.declaresWar) return false; // handled separately
+    // Background powers change sides through driftAlignments, which weighs the
+    // whole bloc; the accede/withdraw orders are written for the player's desk.
+    if (action.alignment) return false;
     if (action.id === 'nuclear-programme') return state.tech > 65 && state.nukes === 0 && mods.aiAggression > 1.1;
     if (action.id === 'mandate') return false; // player-only flavour
     return actionCost(action, state) <= state.treasury;

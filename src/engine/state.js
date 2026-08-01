@@ -1,7 +1,7 @@
 // Game state construction, serialisation, and the small helpers every other
 // engine module leans on.
 
-import { NATIONS_BY_ID, powerRank, registerNation } from '../data/nations.js';
+import { BLOCS, NATIONS_BY_ID, powerRank, registerNation } from '../data/nations.js';
 import { DEFAULT_SCENARIO, scenarioOf } from '../data/scenarios.js';
 import { Rng, hashSeed } from './rng.js';
 import { clampDifficulty } from './difficulty.js';
@@ -243,7 +243,7 @@ export function createGame({
     customNations: {},
     // Bloc membership is a live fact, not a fixed attribute: countries join and
     // leave. Seeded from the roster, then edited by play.
-    blocMembership: Object.fromEntries(roster.map((n) => [n.id, [...(n.blocs || [])]])),
+    blocMembership: seedMemberships(roster),
     // Per-pair escalation ladders, keyed like relations.
     escalation: {},
     log: [],
@@ -263,6 +263,21 @@ export function createGame({
   };
 
   return game;
+}
+
+/**
+ * Founding membership for everyone, including the invented organisations that
+ * carry their founders on the bloc rather than on the nation sheet — a nation
+ * sheet is scenario data, and an invented pact is not.
+ */
+function seedMemberships(roster) {
+  const membership = Object.fromEntries(roster.map((n) => [n.id, [...(n.blocs || [])]]));
+  for (const bloc of Object.values(BLOCS)) {
+    for (const id of bloc.founders || []) {
+      if (membership[id] && !membership[id].includes(bloc.id)) membership[id].push(bloc.id);
+    }
+  }
+  return membership;
 }
 
 /** Restore the RNG for a turn, then write its state back onto the game. */
@@ -300,10 +315,20 @@ export function inBloc(game, id, blocId) {
   return blocsOf(game, id).includes(blocId);
 }
 
+/**
+ * A country's live membership list, created from its founding memberships the
+ * first time anything changes. Without the copy, joining one bloc would silently
+ * cancel every treaty the country started the run holding.
+ */
+function membershipOf(game, id) {
+  if (!game.blocMembership) game.blocMembership = {};
+  if (!game.blocMembership[id]) game.blocMembership[id] = [...(defOf(game, id)?.blocs || [])];
+  return game.blocMembership[id];
+}
+
 /** Join a bloc. Returns true when it was actually a change. */
 export function joinBloc(game, id, blocId) {
-  if (!game.blocMembership) game.blocMembership = {};
-  const list = game.blocMembership[id] || (game.blocMembership[id] = []);
+  const list = membershipOf(game, id);
   if (list.includes(blocId)) return false;
   list.push(blocId);
   return true;
@@ -311,8 +336,7 @@ export function joinBloc(game, id, blocId) {
 
 /** Leave a bloc. Returns true when it was actually a change. */
 export function leaveBloc(game, id, blocId) {
-  const list = game?.blocMembership?.[id];
-  if (!list) return false;
+  const list = membershipOf(game, id);
   const at = list.indexOf(blocId);
   if (at < 0) return false;
   list.splice(at, 1);

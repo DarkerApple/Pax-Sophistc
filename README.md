@@ -25,10 +25,19 @@ Each turn is one **quarter**. You get a budget (a share of GDP), some **politica
 and up to **four orders**. Then the other 55 countries take their turn, the world throws
 events at you, wars grind forward, and the books get balanced.
 
-- **174 orders** across Quick, Economy, Military, Diplomacy, Domestic, Intelligence,
+- **302 orders** across Quick, Economy, Military, Diplomacy, Domestic, Intelligence,
   Technology and the War Room — from `Fiscal Stimulus` and `Semiconductor Self-Sufficiency`
   to `Covert Destabilisation` and `Military Intervention`.
-- **A Quick tab that reads the room.** **124 one-capital quick orders**, of which you see
+- **Every tab reads the room, not just Quick.** A category is a *pool*, not a menu: the
+  economy tab of a country that is broke and stagnant offers `Defend the Currency`,
+  `Comprehensive Tax Reform` and `Issue a Sovereign Bond`, while a rich and growing one is
+  offered `Found a Development Bank`, `Deep-Water Port Expansion` and `Sovereign Wealth
+  Fund`. Fifty-four economic instruments exist; thirteen are on the desk. Each tab says how
+  many of how many it is showing, every card carries the situation that put it there, no
+  single situation may take more than four slots, and a handful of standing instruments sit
+  at the bottom so no tab is ever empty. The same ranking trims the list of orders you can
+  point at another country in its country file.
+- **A Quick tab that reads the room.** **127 one-capital quick orders**, of which you see
   fourteen: the ones that answer *what is actually happening*. `Deploy the Gendarmerie` on
   the fourth night of a riot, `Open the Archives` when your approval is gone, `Deny What You
   Cannot Hold` when the front is collapsing, `Bring Forward the Bond Auction` when the
@@ -97,7 +106,42 @@ events at you, wars grind forward, and the books get balanced.
 - **Sides are not fixed.** Governments join and leave NATO, the EU, BRICS+, the CSTO, the
   SCO, the GCC, ASEAN and the African Union during a run — sometimes by event, sometimes
   because their friendships have drifted far enough from their formal commitments that the
-  paperwork finally catches up.
+  paperwork finally catches up. **You can change sides too**: every bloc carries an accede
+  and a withdraw order in the Diplomacy tab, offered only when the invitation is genuinely
+  on the table (you need friends inside) or when you are actually a member. Alongside the
+  real organisations the board carries **six invented ones** — the Meridian Compact, the
+  Critical Minerals Union, the Sentinel Pact, the Blue Water Forum, the Sahel Development
+  Union and the Digital Concord — so a run can end with an alliance map that no longer
+  looks like the one it started from.
+
+### The world panel
+
+Borders move, states break apart and governments change sides whether or not you are
+watching. The centre column carries a panel that shows it, in three faces:
+
+- **Alignments** — every bloc on the board with its live membership and its share of world
+  power, which of them you are party to, who has changed sides lately, and which countries
+  the rest of the world has started to treat as a threat.
+- **Borders** — the states that did not exist when the run started, each with the name it
+  gave itself and the statistics it inherited from its parent; the states that no longer
+  govern themselves and who administers them; every country's net gain or loss of ground
+  since the first quarter; and the log of how each of those things happened.
+- **Rankings** — ten league tables (power, economy, per head, army, land, people,
+  influence, technology, stability, warheads) with your own position always visible, even
+  when you are fiftieth.
+
+### Statistics
+
+Every figure is framed rather than flat. The dashboard opens with the quarter's books —
+projected growth, revenue against upkeep, and the ground you hold — before you issue a
+single order. A country's full file is five sections rather than one grid: **the economy**
+(output, per head, next quarter's growth and what is driving it, revenue, collection
+efficiency, forces upkeep), **people and ground** (population, land, density, share of the
+world), **what it can fight with** (force, readiness, deployable power, warheads, wars),
+**whether it holds together** (stability, approval, unrest, technology, each with its band
+and its direction), and **how the world sees it** (influence, power rank as a share of the
+leading power, friendly and hostile states, how threatening it looks, its blocs and its
+sanctions) — plus trend lines for GDP, military and stability across the whole run.
 
 At the end of your term you are graded across five components against the mandate you were
 given on day one.
@@ -393,11 +437,12 @@ src/
     territory.js      the land grid, the outlines traced out of it, and the front
     coalitions.js     threat, balancing coalitions, and containment
     quickorders.js    the situational quick catalogue
+    programmes.js     the standing catalogue: full multi-year programmes
     statecraft.js     secession, conquest, land sales, and changing sides
     causes.js         why an event happened, scored against live state
     finance.js        borrowing, interest, and the emergency programme
     state.js          game construction, relations, serialisation
-    actions.js        the 51-order catalogue
+    actions.js        the catalogue, the situation tags, and the shelf ranking
     effects.js        the shared "something happened to a country" vocabulary
     resolve.js        order → outcome tier → world changes
     opponents.js      how the other 55 countries decide their quarter
@@ -417,12 +462,14 @@ src/
   ui/
     theme.js          the theme + text-size registry
     context.js        the framing that turns a bare figure into a position
+    worldview.js      blocs, breakaway states, occupations and border movement
     keys.js           the keyboard table the handler and the help card share
     map.js            projection, zoom/pan camera, view modes, legends
     setup.js          new-game screen
     game.js           command screen: dashboard, inspector, feed, planner
     dom.js, store.js  helpers and persistence
-tests/                engine, territory, AI-boundary, world and translation tests
+tests/                engine, orders, territory, coalitions, worldview, AI-boundary,
+                      world and translation tests
 ```
 
 The simulation (`src/engine/`, `src/data/`) has no DOM dependency and runs under plain Node,

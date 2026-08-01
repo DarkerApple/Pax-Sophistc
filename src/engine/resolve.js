@@ -6,6 +6,7 @@ import { ACTIONS_BY_ID, actionCost } from './actions.js';
 import { applyEffect, describeChanges, scaleEffect } from './effects.js';
 import { clamp, getRelation, logEvent } from './state.js';
 import { annexOccupied, concludeWar, declareWar, findWar, pressWar } from './war.js';
+import { realign } from './statecraft.js';
 
 /** The first war this country is fighting, for orders that need no target. */
 function activeWarFor(game, id) {
@@ -238,6 +239,22 @@ export function resolveAction(game, rng, mods, order, actorId = game.playerId) {
           `${war.name}: front ${spec.warScore > 0 ? 'moved in your favour' : 'gave ground'} (${Math.round(war.warScore)} on the hundred-point scale).`,
         );
       }
+    }
+  }
+
+  // Changing sides. The bloc paperwork is the small part; the diplomatic wash
+  // that follows is handled by realign().
+  if (action.alignment && succeeded) {
+    const done = realign(game, actorId, action.alignment.blocId, action.alignment.join, rng);
+    if (done) {
+      outcome.realignment = done;
+      outcome.notes.push(
+        action.alignment.join
+          ? `${NATIONS_BY_ID[actorId]?.name || actorId} is a member as of this quarter.`
+          : 'The withdrawal takes effect immediately.',
+      );
+    } else {
+      outcome.notes.push('The paperwork changed nothing — the position was already what it is.');
     }
   }
 

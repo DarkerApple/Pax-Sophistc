@@ -102,6 +102,57 @@ export function relationColour(value) {
   return 'var(--bad)';
 }
 
+/**
+ * A trend line for a series of numbers.
+ *
+ * A rank tells you where you stand; a line tells you which way you have been
+ * going, which is usually the more useful of the two. Scaled to its own
+ * minimum and maximum, because the shape is the point, not the axis.
+ *
+ * @param {number[]} values oldest first
+ * @param {{width?: number, height?: number, colour?: string}} [options]
+ * @returns {SVGElement|null} null when there is not yet a line to draw
+ */
+export function sparkline(values, { width = 120, height = 28, colour = 'var(--accent)' } = {}) {
+  const series = (values || []).filter((v) => Number.isFinite(v));
+  if (series.length < 2) return null;
+
+  const min = Math.min(...series);
+  const max = Math.max(...series);
+  const span = max - min || 1;
+  const step = width / (series.length - 1);
+  const points = series
+    .map((v, i) => `${(i * step).toFixed(1)},${(height - ((v - min) / span) * (height - 2) - 1).toFixed(1)}`)
+    .join(' ');
+
+  const ns = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(ns, 'svg');
+  svg.setAttribute('class', 'spark');
+  svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
+  svg.setAttribute('preserveAspectRatio', 'none');
+  svg.setAttribute('aria-hidden', 'true');
+
+  const line = document.createElementNS(ns, 'polyline');
+  line.setAttribute('points', points);
+  line.setAttribute('fill', 'none');
+  line.setAttribute('stroke', colour);
+  line.setAttribute('stroke-width', '1.6');
+  line.setAttribute('vector-effect', 'non-scaling-stroke');
+  line.setAttribute('stroke-linejoin', 'round');
+  svg.append(line);
+
+  // The latest reading, marked, so the eye lands on where the series ends up.
+  const dot = document.createElementNS(ns, 'circle');
+  const [lastX, lastY] = points.split(' ').pop().split(',');
+  dot.setAttribute('cx', lastX);
+  dot.setAttribute('cy', lastY);
+  dot.setAttribute('r', '2');
+  dot.setAttribute('fill', colour);
+  svg.append(dot);
+
+  return svg;
+}
+
 /** Simple debounce for text inputs. */
 export function debounce(fn, ms = 250) {
   let timer = null;

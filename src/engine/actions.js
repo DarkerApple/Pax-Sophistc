@@ -7,12 +7,13 @@
 // is a problem to manage rather than a state with no legal moves.
 // skills shift the success chance: weight is the swing between a stat of 0 and 100.
 
-import { NATIONS_BY_ID } from '../data/nations.js';
+import { BLOCS, NATIONS_BY_ID } from '../data/nations.js';
 import { availableFunds } from './finance.js';
-import { getRelation } from './state.js';
+import { blocsOf, getRelation } from './state.js';
 import { neighboursOf } from './territory.js';
 import { threatOf } from './coalitions.js';
 import { QUICK_ORDERS } from './quickorders.js';
+import { PROGRAMMES } from './programmes.js';
 
 export const CATEGORIES = [
   { id: 'quick', name: 'Quick', icon: '⚡', synthetic: true },
@@ -949,20 +950,170 @@ export const ACTIONS = [
   },
 ];
 
-// The situational quick shelf lives in its own file — a hundred-odd orders
-// would bury the thirty programmes that make up the rest of the catalogue.
+/**
+ * Accede to, or walk out of, every bloc on the board — real and invented.
+ *
+ * Two orders per organisation, generated rather than written out, because the
+ * only thing that differs between acceding to NATO and acceding to the Meridian
+ * Compact is the name on the treaty. `available` keeps them off the shelf
+ * unless the invitation is actually on the table, which is what stops the
+ * diplomacy tab being thirty greyed-out cards.
+ */
+const ALIGNMENT_ORDERS = Object.values(BLOCS).flatMap((bloc) => [
+  {
+    id: `accede-${bloc.id}`,
+    name: `Accede to ${bloc.name}`,
+    category: 'diplomacy',
+    blurb: `Sign the treaty, accept the obligations, and change which side of the board you are on.`,
+    cost: { pctGdp: 0.4 }, pc: 4, target: 'none', baseSuccess: 0.62, risk: 'medium',
+    skills: [['influence', 0.22], ['stability', 0.08]],
+    alignment: { blocId: bloc.id, join: true },
+    situational: ['isolated', 'tension', 'warNextDoor', 'hostileNeighbour', 'feared', 'neighbourCrisis'],
+    available: (game) => joinableFor(game, bloc.id),
+    effects: {
+      success: { self: { influence: 5, approval: 3 }, worldTension: 2 },
+      failure: { self: { influence: -4, approval: -4 } },
+    },
+  },
+  {
+    id: `withdraw-${bloc.id}`,
+    name: `Withdraw from ${bloc.name}`,
+    category: 'diplomacy',
+    blurb: `Give notice, take back the commitments, and find out who your friends were.`,
+    cost: { pctGdp: 0.2 }, pc: 4, target: 'none', baseSuccess: 0.72, risk: 'high', confirm: true,
+    skills: [['stability', 0.14]],
+    alignment: { blocId: bloc.id, join: false },
+    situational: ['sanctioned', 'pariah', 'unpopular', 'escalation', 'war', 'occupied'],
+    available: (game) => blocsOf(game, game.playerId).includes(bloc.id),
+    effects: {
+      success: { self: { influence: -4, approval: 4, unrest: 3 }, worldTension: 3 },
+      failure: { self: { influence: -7, approval: -5, unrest: 6 }, worldTension: 2 },
+    },
+  },
+]);
+
+/** Whether a bloc would have the player: you need friends already inside. */
+function joinableFor(game, blocId) {
+  const id = game.playerId;
+  if (blocsOf(game, id).includes(blocId)) return false;
+  const members = Object.keys(game.nations)
+    .filter((n) => n !== id && game.nations[n]?.sovereign !== false && blocsOf(game, n).includes(blocId));
+  if (!members.length) return false;
+  const warmth = members.reduce((sum, m) => sum + getRelation(game, id, m), 0) / members.length;
+  return warmth >= 20;
+}
+
+// The situational shelves live in their own files — three hundred orders in one
+// array would bury the structure. Quick orders are things done by Friday;
+// programmes are things still running in three years.
 ACTIONS.push(...QUICK_ORDERS);
+ACTIONS.push(...PROGRAMMES);
+ACTIONS.push(...ALIGNMENT_ORDERS);
+
+/**
+ * What puts each of the founding programmes on the desk.
+ *
+ * The orders above were written before situations existed, and tagging them in
+ * place would bury each one under a line of metadata. Keeping the map here also
+ * means the whole of it can be read at once, which is the only way to tell
+ * whether a situation has too many answers or none.
+ *
+ * Anything deliberately absent is a *standing* instrument: always available,
+ * always at the bottom of its category, so no tab is ever empty.
+ * (stimulus, infrastructure, trade-deal, rearm, exercises, state-visit,
+ * multilateral, reform, messaging, espionage, counter-intel, rnd-push,
+ * seek-peace, offensive, hold-line.)
+ */
+const SITUATIONS = {
+  // Economy
+  sanctions: ['hostileNeighbour', 'conquest', 'attack', 'tension', 'pariah', 'war'],
+  'industrial-policy': ['stagnant', 'techLag', 'exporter', 'sanctioned'],
+  'energy-security': ['energy', 'commodityShock', 'war', 'accident', 'sanctioned'],
+  austerity: ['debt', 'tight', 'inflation', 'financial'],
+  deregulate: ['stagnant', 'tight', 'growing'],
+  'special-zones': ['stagnant', 'exporter', 'young', 'maritime'],
+  'labour-markets': ['stagnant', 'aging', 'unpopular'],
+  'tourism-push': ['peaceful', 'calm', 'maritime', 'stagnant'],
+  'sovereign-fund': ['rich', 'resource', 'energy', 'growing'],
+  'debt-restructure': ['debt', 'financial', 'tight'],
+
+  // Military
+  'forward-deploy': ['tension', 'hostileNeighbour', 'warNextDoor', 'escalation', 'strongArmy'],
+  'arms-transfer': ['warNextDoor', 'neighbourCrisis', 'hostileNeighbour', 'strongArmy'],
+  peacekeeping: ['warNextDoor', 'neighbourCrisis', 'influential', 'peace'],
+  intervene: ['neighbourCrisis', 'warNextDoor', 'conquest', 'newState', 'feared'],
+  'nuclear-programme': ['nuclear', 'brink', 'feared', 'hostileNeighbour', 'techLead'],
+
+  // Diplomacy
+  'defence-pact': ['tension', 'hostileNeighbour', 'warNextDoor', 'feared', 'escalation'],
+  'aid-package': ['disaster', 'famine', 'epidemic', 'refugees', 'neighbourCrisis', 'rich'],
+  mediate: ['tension', 'war', 'warNextDoor', 'brink', 'influential'],
+  condemn: ['conquest', 'attack', 'nuclearUsed', 'coup', 'pariah'],
+
+  // Domestic
+  crackdown: ['boiling', 'riot', 'unrest', 'coup'],
+  'social-spending': ['unrest', 'unpopular', 'inflation', 'famine'],
+  mandate: ['popular', 'unpopular', 'fragile', 'warWinning'],
+
+  // Intelligence
+  'cyber-op': ['cyber', 'hostileNeighbour', 'war', 'techLead', 'escalation'],
+  destabilise: ['hostileNeighbour', 'feared', 'war', 'warLosing'],
+
+  // Technology
+  'compute-programme': ['techLag', 'techLead', 'breakthrough', 'growing'],
+  'space-programme': ['techLead', 'rich', 'tension', 'influential'],
+  semiconductors: ['techLag', 'sanctioned', 'exporter', 'cyber'],
+
+  // War room
+  'annex-territory': ['occupier', 'warWinning', 'conquest'],
+  'press-advantage': ['warWinning', 'warStalled'],
+  mobilise: ['warLosing', 'occupied', 'war', 'brink'],
+  'strike-logistics': ['warStalled', 'warLosing', 'war'],
+  'war-economy': ['war', 'warStalled', 'warLosing', 'casualties'],
+};
+
+for (const [id, tags] of Object.entries(SITUATIONS)) {
+  const action = ACTIONS.find((a) => a.id === id);
+  if (action && !action.situational) action.situational = tags;
+}
 
 export const ACTIONS_BY_ID = Object.fromEntries(ACTIONS.map((a) => [a.id, a]));
 
-/** Money cost in billions USD for a given nation. */
-/** The Quick tab is a view across categories, not a category of its own. */
-export function actionsInCategory(categoryId, game = null) {
-  if (categoryId === 'quick') {
-    const quick = ACTIONS.filter((a) => a.quick);
-    return game ? rankQuick(game, quick) : quick;
-  }
-  return ACTIONS.filter((a) => a.category === categoryId);
+/**
+ * The orders a category is offering right now.
+ *
+ * Every category is a pool the world draws from, not a fixed menu. A country
+ * that is broke and stagnant sees different economic instruments from one that
+ * is rich and overheating, and neither sees all sixty — the same rule the quick
+ * shelf runs on, applied to the whole catalogue.
+ */
+export function actionsInCategory(categoryId, game = null, tags = null) {
+  // The quick shelf is a view across categories; every other tab is everything
+  // filed under it, one-capital orders and full programmes alike.
+  const all = categoryId === 'quick'
+    ? ACTIONS.filter((a) => a.quick)
+    : ACTIONS.filter((a) => a.category === categoryId);
+  if (!game) return all;
+  // Some orders are not merely unwise right now, they are not on the table at
+  // all — acceding to a bloc that has not invited you, for one.
+  const pool = all.filter((a) => !a.available || a.available(game));
+  const size = categoryId === 'quick' ? SHELF_SIZE : CATEGORY_SHELF;
+  return rankShelf(game, pool, size, tags || situationTags(game));
+}
+
+/**
+ * The orders worth pointing at one particular country, most apt first.
+ *
+ * The country file used to list every targeted order in the catalogue, which
+ * was fine at twenty and is a wall at ninety. Same situational ranking as the
+ * tabs, so what is on offer against a rival in a crisis differs from what is on
+ * offer against a friend in peacetime.
+ */
+export function targetedActionsFor(game, targetId, limit = 12) {
+  const pool = ACTIONS.filter(
+    (a) => a.target === 'nation' && (!a.available || a.available(game)) && actionAvailability(game, a, targetId).ok,
+  );
+  return rankShelf(game, pool, limit, situationTags(game));
 }
 
 /**
@@ -1148,16 +1299,23 @@ export function reasonFor(action, tags) {
 }
 
 /**
- * Quick orders that answer something happening now, most urgent first; the
+ * The orders that answer something happening now, most urgent first; the
  * standing ones that always make sense after; and the ones that answer nothing
  * at all left off entirely. Deterministic — the same quarter always offers the
  * same shelf.
+ *
+ * @param {object} game
+ * @param {Array<object>} pool every order the tab could draw from
+ * @param {number} size how many to put on the shelf
+ * @param {Set<string>} tags what the world is doing, from situationTags
  */
-function rankQuick(game, quick) {
-  const tags = situationTags(game);
+function rankShelf(game, pool, size, tags) {
   const scored = [];
+  // Situational orders with nothing to answer. Held back rather than dropped,
+  // so a quiet quarter still has a full tab to work with.
+  const reserve = [];
 
-  for (const action of quick) {
+  for (const action of pool) {
     const wants = action.situational;
     if (!wants) {
       // The handful of orders that are always sensible sit at the bottom.
@@ -1165,8 +1323,10 @@ function rankQuick(game, quick) {
       continue;
     }
     const hits = wants.filter((tag) => tags.has(tag));
-    // A situational order with nothing to answer is noise on the shelf.
-    if (!hits.length) continue;
+    if (!hits.length) {
+      reserve.push({ action, score: -1 });
+      continue;
+    }
 
     const urgency = hits.reduce((sum, tag) => sum + (URGENCY[tag] ?? BACKGROUND_URGENCY), 0);
     // An order aimed squarely at what is happening beats one that lists six
@@ -1175,37 +1335,45 @@ function rankQuick(game, quick) {
     scored.push({ action, score: urgency + precision * 0.8 });
   }
 
-  scored.sort((a, b) => b.score - a.score || a.action.id.localeCompare(b.action.id));
+  const byScore = (a, b) => b.score - a.score || a.action.id.localeCompare(b.action.id);
+  scored.sort(byScore);
+  reserve.sort((a, b) => a.action.id.localeCompare(b.action.id));
 
-  // Capped, because a "quick" shelf of a hundred and twenty is not a quick
-  // shelf — and spread, because eight different answers to the same flood is a
-  // worse shelf than four answers to the flood and four to everything else that
-  // is also happening.
+  // Capped, because a shelf of a hundred and twenty is not a shelf — and
+  // spread, because eight different answers to the same flood is a worse shelf
+  // than four answers to the flood and four to everything else that is also
+  // happening.
   const perReason = new Map();
   const shelf = [];
   const overflow = [];
   for (const entry of scored) {
     const reason = reasonFor(entry.action, tags) || 'standing';
     const used = perReason.get(reason) || 0;
-    if (used >= 4) {
+    if (used >= SPREAD_CAP) {
       overflow.push(entry);
       continue;
     }
     perReason.set(reason, used + 1);
     shelf.push(entry);
-    if (shelf.length >= SHELF_SIZE) break;
+    if (shelf.length >= size) break;
   }
   // If the world is only doing one thing, fall back to more of that one thing
-  // rather than showing a short shelf.
-  for (const entry of overflow) {
-    if (shelf.length >= SHELF_SIZE) break;
+  // rather than showing a short shelf — and if it is doing nothing at all, to
+  // the instruments that are merely not urgent.
+  for (const entry of [...overflow, ...reserve]) {
+    if (shelf.length >= Math.max(MIN_SHELF, Math.min(size, pool.length))) break;
     shelf.push(entry);
   }
   return shelf.map((entry) => entry.action);
 }
 
-/** How many quick orders the tab shows at once. */
+/** How many orders each tab shows at once. */
 const SHELF_SIZE = 14;
+const CATEGORY_SHELF = 13;
+/** Never leave a tab looking empty, however quiet the quarter is. */
+const MIN_SHELF = 8;
+/** How many answers to the same situation one shelf may carry. */
+const SPREAD_CAP = 4;
 
 export function actionCost(action, nationState) {
   const pct = action.cost?.pctGdp || 0;
@@ -1227,6 +1395,11 @@ export function actionAvailability(game, action, targetId = null) {
   }
   if (action.target === 'nation' && !targetId) {
     return { ok: false, reason: 'Choose a target country' };
+  }
+  if (action.available && !action.available(game)) {
+    return { ok: false, reason: action.alignment?.join
+      ? 'Nobody inside is proposing your membership'
+      : 'Not something you are party to' };
   }
   if (targetId === game.playerId) {
     return { ok: false, reason: 'Cannot target your own country' };

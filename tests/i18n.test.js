@@ -180,6 +180,8 @@ test('no Korean string leaves a placeholder that nothing fills', () => {
     'nights', 'arrests', 'crowd', 'cities', 'fighters', 'days', 'workers',
     'fall', 'rate', 'down', 'priceUp', 'hours', 'delta', 'left', 'list',
     'victim', 'winner', 'joiner', 'aggressor',
+    // The world panel and the country file.
+    'year', 'q', 'all', 'category', 'up', 'rev',
   ]);
   for (const [key, value] of Object.entries(KO.ui)) {
     if (typeof value !== 'string') continue;

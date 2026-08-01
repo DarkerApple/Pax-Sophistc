@@ -92,7 +92,10 @@ test('a rampage turns the world against you and a quiet run does not', () => {
     // what it did finishes the run at threat zero, which is the system working
     // rather than the system failing.
     let peakThreat = 0;
-    let coldest = 0;
+    // The true low point across the run. Starting this at zero would floor both
+    // runs at zero whenever average relations never actually go negative, which
+    // makes a real difference between them invisible.
+    let coldest = Infinity;
     for (let q = 0; q < 12 && game.status === 'active'; q++) {
       if (aggressive) {
         const fighting = game.wars.some(

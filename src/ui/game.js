@@ -1,6 +1,6 @@
 // The command screen: dashboard, inspector, map, briefing feed, order planner.
 
-import { NATIONS_BY_ID } from '../data/nations.js';
+import { BLOCS, NATIONS_BY_ID } from '../data/nations.js';
 import {
   ACTIONS,
   CATEGORIES,
@@ -9,10 +9,13 @@ import {
   actionsInCategory,
   reasonFor,
   situationTags,
+  targetedActionsFor,
 } from '../engine/actions.js';
 import { successChance } from '../engine/resolve.js';
 import {
   activeWarsFor,
+  blocsOf,
+  combatPower,
   dateLabel,
   defOf,
   getRelation,
@@ -27,16 +30,27 @@ import {
   gripOn,
   formatArea,
   formatPerCapita,
+  perCapita,
   powerContext,
   rankLabel,
   rankOf,
   statContext,
 } from './context.js';
-import { scoreRun } from '../engine/turn.js';
+import {
+  blocStandings,
+  feared,
+  formerStates,
+  landMovers,
+  newStates,
+  recentOfType,
+} from './worldview.js';
+import { areaOf } from '../engine/territory.js';
+import { growthOutlook, ledgerFor, scoreRun } from '../engine/turn.js';
 import { LADDER_MAX, playerLadders } from '../engine/consequences.js';
 import { availableFunds, creditLimit, debtOf, describeFinances } from '../engine/finance.js';
 import { gameModifiers } from '../engine/worldmodes.js';
-import { h, money, mount, relationColour, relationLabel, statColour } from './dom.js';
+import { h, money, mount, relationColour, relationLabel, sparkline, statColour } from './dom.js';
+import { threatOf } from '../engine/coalitions.js';
 import { MAP_FOCUSES, VIEW_MODES, WorldMap, alignmentOf, legendFor } from './map.js';
 import { KEY_GROUPS, groupLabel, keyLabel, keybindsIn } from './keys.js';
 import { LANGUAGES, currentLanguage, t, tAction, tLabel, tModifier, tNation } from '../i18n/index.js';
@@ -90,6 +104,34 @@ const WHY_LABELS = {
   feared: 'how you are seen', pariah: 'how you are seen',
 };
 
+/**
+ * The league tables. Each one has to answer "compared with whom, and by how
+ * much" — a rank on its own is the flat number this interface exists to avoid.
+ */
+const RANK_METRICS = [
+  { id: 'power', name: 'Power', hint: 'Everything weighed together: economy, army, technology, reach.',
+    pick: (game, s, id) => livePower(game, id), format: (v) => v.toFixed(0) },
+  { id: 'gdp', name: 'Economy', hint: 'Annual output, nominal.',
+    pick: (game, s) => s.gdp, format: (v) => `$${v.toFixed(2)}T` },
+  { id: 'perCapita', name: 'Per head', hint: 'Output divided by people — wealth rather than size.',
+    pick: (game, s) => perCapita(s), format: (v) => (v >= 1000 ? `$${(v / 1000).toFixed(1)}k` : `$${Math.round(v)}`) },
+  { id: 'military', name: 'Army', hint: 'Hard power actually deployable: force weighted by readiness.',
+    pick: (game, s, id) => combatPower(game, id), format: (v) => v.toFixed(0) },
+  { id: 'land', name: 'Land', hint: 'Ground held right now, not ground held at the start.',
+    pick: (game, s, id) => areaOf(game, id),
+    format: (v) => (v >= 1000 ? `${(v / 1000).toFixed(2)}M km²` : `${Math.round(v).toLocaleString()}k km²`) },
+  { id: 'population', name: 'People', hint: 'Population, in millions.',
+    pick: (game, s) => s.population, format: (v) => `${Math.round(v)}M` },
+  { id: 'influence', name: 'Influence', hint: 'Diplomatic reach — who returns your calls.',
+    pick: (game, s) => s.influence, format: (v) => v.toFixed(0) },
+  { id: 'tech', name: 'Technology', hint: 'Research and industrial sophistication.',
+    pick: (game, s) => s.tech, format: (v) => v.toFixed(0) },
+  { id: 'stability', name: 'Stability', hint: 'How well the institutions hold.',
+    pick: (game, s) => s.stability, format: (v) => v.toFixed(0) },
+  { id: 'nukes', name: 'Warheads', hint: 'Deployed and stockpiled warheads.',
+    pick: (game, s) => s.nukes, format: (v) => v.toLocaleString() },
+];
+
 export class GameScreen {
   constructor(root, app) {
     this.root = root;
@@ -111,6 +153,9 @@ export class GameScreen {
     this.hoverId = null;
     this.pinnedId = null;
     this.helpOpen = false;
+    // Which face of the world panel is showing, and which league table.
+    this.worldTab = 'alignments';
+    this.rankMetric = 'power';
     // Which pane a phone is showing. Ignored above the breakpoint, where all
     // three columns are on screen at once.
     this.pane = 'map';
@@ -148,6 +193,7 @@ export class GameScreen {
             this.#dashboard(), this.#inspector(), this.#escalation(), this.#objectives(), this.#relations()),
           h('div.col.col--centre', { dataset: { scroll: 'centre' } },
             h('div.pane', { dataset: { pane: 'map' } }, this.#mapPanel()),
+            h('div.pane', { dataset: { pane: 'world' } }, this.#worldPanel()),
             h('div.pane', { dataset: { pane: 'briefing' } }, this.#feed()),
           ),
           h('div.col.col--right', { dataset: { scroll: 'right', pane: 'orders' } }, this.#planner()),
@@ -192,6 +238,7 @@ export class GameScreen {
     const panes = [
       { id: 'nation', icon: '⌂', label: t('pane.nation', 'Nation') },
       { id: 'map', icon: '◎', label: t('pane.map', 'Map') },
+      { id: 'world', icon: '⌗', label: t('pane.world', 'World') },
       { id: 'briefing', icon: '☰', label: t('pane.briefing', 'Briefing') },
       { id: 'orders', icon: '✎', label: t('pane.orders', 'Orders'), badge: queued || null },
     ];
@@ -334,6 +381,27 @@ export class GameScreen {
           : h('div.grip__pressures',
               h('span.grip__pressuresLabel', t('grip.clear', 'Nothing is running without you this quarter.'))),
       ),
+      // The books, before a single order is issued: what the quarter is set up
+      // to do on its own. Growth used to appear only after it had happened.
+      (() => {
+        const outlook = growthOutlook(this.game, this.game.playerId);
+        const books = ledgerFor(this.game, this.game.playerId);
+        const land = formatArea(this.game, this.game.playerId);
+        return h('div.ledger',
+          ledgerCell(t('ledger.growth', 'Growth'),
+            `${outlook.growth >= 0 ? '+' : '−'}${Math.abs(outlook.growth).toFixed(2)}%`,
+            t('ledger.perQuarter', 'per quarter'),
+            outlook.growth >= 0 ? 'var(--good)' : 'var(--bad)'),
+          ledgerCell(t('ledger.net', 'Net balance'), `${money(books.net)}`,
+            t('ledger.revenueUpkeep', '{rev} in, {up} out', { rev: money(books.revenue), up: money(books.upkeep) }),
+            books.net >= 0 ? null : 'var(--warn)'),
+          ledgerCell(t('stat.land', 'Land held'), land.text,
+            land.change === null
+              ? t('ledger.unchanged', 'unchanged')
+              : t('context.since', '{delta}% since the start', { delta: deltaLabel(land.change) }),
+            land.change === null ? null : land.change > 0 ? 'var(--good)' : 'var(--bad)'),
+        );
+      })(),
       h('div.stats', STAT_ROWS.map((row) => this.#statBar(row))),
       state.modifiers.length
         ? h('div.modifiers',
@@ -690,6 +758,255 @@ export class GameScreen {
     );
   }
 
+  /**
+   * The world panel: who is aligned with whom, which borders have moved, and
+   * where everybody stands. All of this was already happening in the engine —
+   * countries changing sides, provinces changing hands, new states declaring
+   * themselves — and none of it was anywhere a player could look.
+   */
+  #worldPanel() {
+    const tabs = [
+      ['alignments', t('world.alignments', 'Alignments')],
+      ['borders', t('world.borders', 'Borders')],
+      ['rankings', t('world.rankings', 'Rankings')],
+    ];
+    return h('section.panel.panel--world',
+      h('div.tabs',
+        tabs.map(([id, label]) =>
+          h('button.tab', {
+            class: this.worldTab === id ? 'tab is-active' : 'tab',
+            onclick: () => { this.worldTab = id; this.render(); },
+          }, label),
+        ),
+      ),
+      this.worldTab === 'borders' ? this.#bordersTab()
+        : this.worldTab === 'rankings' ? this.#rankingsTab()
+          : this.#alignmentsTab(),
+    );
+  }
+
+  #alignmentsTab() {
+    const game = this.game;
+    const standings = blocStandings(game);
+    const mine = standings.filter((s) => s.playerIn);
+    const changes = recentOfType(game, 'alignment', 12, 6);
+    const wary = feared(game);
+
+    return h('div.worldbody',
+      h('h3.subhead', t('world.yourTreaties', 'What you are party to')),
+      mine.length
+        ? h('div.chips.chips--tight',
+            mine.map((entry) => h('span.blocchip', { class: entry.bloc.invented ? 'blocchip is-invented' : 'blocchip' },
+              t(`bloc.${entry.bloc.id}`, entry.bloc.name),
+              h('span.blocchip__n', `${entry.members.length}`),
+            )),
+          )
+        : h('p.panel__note', t('world.noTreaties', 'You are in no bloc. Nobody is obliged to you, and you are obliged to nobody.')),
+      h('p.panel__note',
+        t('world.joinHint', 'Accede to a bloc, or walk out of one, from the Diplomacy tab — the offers on the table change as your relations do.')),
+
+      h('h3.subhead', t('world.blocsOnBoard', 'Blocs on the board')),
+      h('div.blocs',
+        standings.map((entry) =>
+          h('div.bloc', { class: entry.playerIn ? 'bloc is-mine' : 'bloc' },
+            h('div.bloc__head',
+              h('span.bloc__name',
+                t(`bloc.${entry.bloc.id}`, entry.bloc.name),
+                entry.bloc.invented
+                  ? h('span.bloc__tag', t('world.invented', 'new'))
+                  : null,
+              ),
+              h('span.bloc__meta',
+                t('world.membersAndPower', '{n} states · {pct}% of world power', {
+                  n: entry.members.length,
+                  pct: Math.round(entry.powerShare * 100),
+                }),
+              ),
+            ),
+            h('div.stat__track',
+              h('div.stat__fill', {
+                style: {
+                  width: `${Math.min(100, entry.powerShare * 100)}%`,
+                  background: entry.playerIn ? 'var(--accent)' : 'var(--muted-2)',
+                },
+              }),
+            ),
+            h('div.bloc__members',
+              entry.members.slice(0, 12).map((id) =>
+                h('button.bloc__member', {
+                  title: tNation(defOf(game, id)),
+                  onclick: () => this.#pin(id),
+                  onpointerenter: () => this.#onMapHover(id),
+                  onpointerleave: () => this.#onMapHover(null),
+                }, defOf(game, id)?.flag || '·'),
+              ),
+              entry.members.length > 12 ? h('span.bloc__more', `+${entry.members.length - 12}`) : null,
+            ),
+          ),
+        ),
+      ),
+
+      changes.length
+        ? h('div',
+            h('h3.subhead', t('world.sidesChanged', 'Who has changed sides')),
+            changes.map((e) => h('div.logline.logline--major',
+              h('span.logline__date', e.date), h('span.logline__text', e.text))),
+          )
+        : null,
+
+      wary.length
+        ? h('div',
+            h('h3.subhead', t('world.wary', 'Who the world is watching')),
+            wary.map((entry) =>
+              h('div.threatrow', { onpointerenter: () => this.#onMapHover(entry.id), onpointerleave: () => this.#onMapHover(null) },
+                h('span', `${entry.def.flag} ${tNation(entry.def)}`),
+                h('span.threatrow__bar',
+                  h('span.threatrow__fill', { style: { width: `${Math.round(entry.threat * 100)}%` } })),
+                h('span.threatrow__value', `${Math.round(entry.threat * 100)}`),
+              ),
+            ),
+            h('p.panel__note',
+              t('world.wearyNote', 'The higher this reads, the more readily others will join a war against them — including against you.')),
+          )
+        : null,
+    );
+  }
+
+  #bordersTab() {
+    const game = this.game;
+    const born = newStates(game);
+    const gone = formerStates(game);
+    const { gained, lost } = landMovers(game);
+    const events = recentOfType(game, ['territory', 'conquest', 'secession'], 8, 8);
+
+    const areaText = (km2) => (Math.abs(km2) >= 1000
+      ? `${(km2 / 1000).toFixed(2)}M km²`
+      : `${Math.round(km2).toLocaleString()}k km²`);
+
+    return h('div.worldbody',
+      h('h3.subhead', t('world.newStates', 'States that did not exist in {year}', { year: game.year - Math.floor(game.turn / 4) })),
+      born.length
+        ? born.map((entry) =>
+            h('div.newstate',
+              h('div.newstate__head',
+                h('span.newstate__name', `${entry.def.flag} ${tNation(entry.def)}`),
+                h('span.newstate__from',
+                  entry.parent
+                    ? t('world.brokeFrom', 'from {parent}', { parent: tNation(entry.parent) })
+                    : ''),
+              ),
+              h('div.newstate__stats',
+                h('span', `$${entry.gdp.toFixed(2)}T`),
+                h('span', `${Math.round(entry.population)}M`),
+                h('span', areaText(entry.area)),
+                h('span', t('world.mil', 'mil {n}', { n: Math.round(entry.military) })),
+                h('span', t('world.stab', 'stab {n}', { n: Math.round(entry.stability) })),
+              ),
+              h('div.newstate__foot',
+                entry.sovereign
+                  ? t('world.recognisedBy', 'Independent since Q{q}', { q: entry.bornTurn + 1 })
+                  : t('world.alreadyGone', 'Already absorbed'),
+              ),
+            ),
+          )
+        : h('p.panel__note', t('world.noNewStates', 'No country has broken apart yet. Coups, uprisings and lost wars are what does it.')),
+
+      h('h3.subhead', t('world.formerStates', 'States that no longer govern themselves')),
+      gone.length
+        ? gone.map((entry) =>
+            h('div.relation', { onclick: () => this.#pin(entry.id) },
+              h('span.relation__flag', entry.def?.flag || '·'),
+              h('span.relation__name', tNation(entry.def)),
+              h('span.relation__value', { style: { color: entry.byPlayer ? 'var(--accent)' : 'var(--muted)' } },
+                entry.holder
+                  ? t('world.heldBy', 'held by {nation}', { nation: tNation(entry.holder) })
+                  : t('world.dissolved', 'dissolved')),
+            ),
+          )
+        : h('p.panel__note', t('world.allSovereign', 'Every country on the board still runs its own affairs.')),
+
+      h('h3.subhead', t('world.groundMoved', 'Ground gained and lost since the first quarter')),
+      gained.length || lost.length
+        ? h('div.movers',
+            gained.map((entry) => h('div.mover',
+              h('span', `${entry.def.flag} ${tNation(entry.def)}`),
+              h('span.mover__value.is-up', `+${areaText(entry.delta)}`))),
+            lost.map((entry) => h('div.mover',
+              h('span', `${entry.def.flag} ${tNation(entry.def)}`),
+              h('span.mover__value.is-down', `−${areaText(Math.abs(entry.delta))}`))),
+          )
+        : h('p.panel__note', t('world.bordersStill', 'The map is where it started. Borders move when wars are won, provinces are sold, or a region walks out.')),
+
+      events.length
+        ? h('div',
+            h('h3.subhead', t('world.howItMoved', 'How it moved')),
+            events.map((e) => h('div.logline', { class: `logline logline--${e.severity}` },
+              h('span.logline__date', e.date), h('span.logline__text', e.text))),
+          )
+        : null,
+    );
+  }
+
+  /** League tables. One metric at a time, with your own place always visible. */
+  #rankingsTab() {
+    const game = this.game;
+    const metric = RANK_METRICS.find((m) => m.id === this.rankMetric) || RANK_METRICS[0];
+
+    const rows = sovereignIds(game)
+      .map((id) => ({ id, def: defOf(game, id), value: metric.pick(game, game.nations[id], id) }))
+      .filter((r) => Number.isFinite(r.value))
+      .sort((a, b) => b.value - a.value);
+
+    const myIndex = rows.findIndex((r) => r.id === game.playerId);
+    const top = rows.slice(0, 10);
+    // If you are not in the top ten, show your own neighbourhood underneath it
+    // rather than making a player count down a list of fifty-six.
+    const around = myIndex >= 10 ? rows.slice(Math.max(10, myIndex - 1), myIndex + 2) : [];
+    const total = rows.reduce((sum, r) => sum + Math.max(0, r.value), 0);
+
+    const line = (row, index) =>
+      h('div.league', { class: row.id === game.playerId ? 'league is-you' : 'league',
+        onclick: () => this.#pin(row.id),
+        onpointerenter: () => this.#onMapHover(row.id),
+        onpointerleave: () => this.#onMapHover(null),
+      },
+        h('span.league__rank', `${index + 1}`),
+        h('span.league__flag', row.def?.flag || '·'),
+        h('span.league__name', tNation(row.def)),
+        h('span.league__bar',
+          h('span.league__fill', {
+            style: {
+              width: `${Math.max(1, (Math.max(0, row.value) / Math.max(1e-9, rows[0].value)) * 100)}%`,
+              background: row.id === game.playerId ? 'var(--accent)' : 'var(--muted-2)',
+            },
+          })),
+        h('span.league__value', metric.format(row.value)),
+      );
+
+    return h('div.worldbody',
+      h('div.chips.chips--tight',
+        RANK_METRICS.map((m) =>
+          h('button.chip', {
+            class: this.rankMetric === m.id ? 'chip is-active' : 'chip',
+            onclick: () => { this.rankMetric = m.id; this.render(); },
+          }, t(`metric.${m.id}`, m.name)),
+        ),
+      ),
+      h('p.panel__note', t(`metric.${metric.id}Hint`, metric.hint)),
+      top.map(line),
+      around.length
+        ? h('div', h('div.league__gap', '⋯'), around.map((row) => line(row, rows.indexOf(row))))
+        : null,
+      h('div.leaguefoot',
+        t('world.yourShare', 'You hold {pct}% of the world total, ranked {n} of {all}.', {
+          pct: (Math.max(0, rows[myIndex]?.value ?? 0) / Math.max(1e-9, total) * 100).toFixed(1),
+          n: myIndex + 1,
+          all: rows.length,
+        }),
+      ),
+    );
+  }
+
   #feed() {
     const briefing = this.app.briefing;
     const tabs = [
@@ -810,7 +1127,10 @@ export class GameScreen {
     const categories = CATEGORIES.filter((c) => !c.wartimeOnly || atWar);
     if (!categories.some((c) => c.id === this.category)) this.category = 'economy';
 
-    const catalogue = actionsInCategory(this.category, game)
+    // Read the world once, not once per card: every tab is now filtered and
+    // ranked by what is actually happening, so this is the hot path.
+    const tags = situationTags(game);
+    const catalogue = actionsInCategory(this.category, game, tags)
       .sort((a, b) => Number(recommended.has(b.id)) - Number(recommended.has(a.id)));
 
     return h('section.panel.panel--planner',
@@ -873,7 +1193,16 @@ export class GameScreen {
         ),
       ),
 
-      h('div.catalogue', catalogue.map((a) => this.#actionCard(a, recommended.has(a.id)))),
+      h('p.panel__note',
+        t('orders.shelfNote',
+          '{n} of {all} {category} instruments, chosen for what the quarter is doing. The tab changes as the world does.',
+          {
+            n: catalogue.length,
+            all: actionsInCategory(this.category).length,
+            category: tLabel('categories', this.category, this.category).toLowerCase(),
+          })),
+
+      h('div.catalogue', catalogue.map((a) => this.#actionCard(a, recommended.has(a.id), tags))),
 
       this.#customOrder(),
     );
@@ -899,9 +1228,9 @@ export class GameScreen {
     return ids;
   }
 
-  #actionCard(action, recommended) {
+  #actionCard(action, recommended, tags = null) {
     const game = this.game;
-    const reason = reasonFor(action, situationTags(game));
+    const reason = reasonFor(action, tags || situationTags(game));
     const state = game.nations[game.playerId];
     const mods = gameModifiers(game);
     const cost = actionCost(action, state);
@@ -1242,10 +1571,11 @@ export class GameScreen {
   #nationDetail() {
     const game = this.game;
     const id = this.detailNationId;
-    const def = NATIONS_BY_ID[id];
+    const def = defOf(game, id);
     const state = game.nations[id];
     const relation = getRelation(game, game.playerId, id);
     const isPlayer = id === game.playerId;
+    const history = state.history || [];
 
     return h('div.modal', {
       role: 'dialog', 'aria-modal': 'true',
@@ -1263,18 +1593,27 @@ export class GameScreen {
         h('p.detail__brief', tNation(def, 'brief')),
         isPlayer ? null : h('div.detail__relation', { style: { color: relationColour(relation) } },
           `${relationLabel(relation)} — relation ${Math.round(relation)}`),
-        h('div.detail__grid',
-          detailStat(t('stat.gdp', 'GDP'), `$${state.gdp.toFixed(2)}T`),
-          detailStat(t('stat.treasury', 'Treasury'), money(state.treasury)),
-          detailStat(t('stat.military', 'Military'), Math.round(state.military)),
-          detailStat(t('stat.readiness', 'Readiness'), Math.round(state.readiness)),
-          detailStat(t('stat.tech', 'Technology'), Math.round(state.tech)),
-          detailStat(t('stat.stability', 'Stability'), Math.round(state.stability)),
-          detailStat(t('stat.unrest', 'Unrest'), Math.round(state.unrest)),
-          detailStat(t('stat.influence', 'Influence'), Math.round(state.influence)),
-          detailStat(t('stat.nukes', 'Warheads'), state.nukes || '—'),
-          detailStat(t('stat.powerRank', 'Power rank'), `#${rankedNations(game).findIndex((r) => r.state.id === id) + 1}`),
-        ),
+
+        // Five books rather than one grid of ten figures: what the country
+        // earns, who lives in it, what it can fight with, whether it holds
+        // together, and what the rest of the world makes of it.
+        this.#detailEconomy(id, state),
+        this.#detailPeople(id, state),
+        this.#detailForce(id, state),
+        this.#detailCohesion(id, state),
+        this.#detailStanding(id, state, def),
+
+        history.length > 2
+          ? h('div.detail__section',
+              h('h3.subhead', t('detail.trend', 'Over the run')),
+              h('div.trends',
+                trend(t('stat.gdp', 'GDP'), history.map((p) => p.gdp), (v) => `$${v.toFixed(2)}T`),
+                trend(t('stat.military', 'Military'), history.map((p) => p.military), (v) => v.toFixed(0)),
+                trend(t('stat.stability', 'Stability'), history.map((p) => p.stability), (v) => v.toFixed(0)),
+              ),
+            )
+          : null,
+
         state.modifiers.length
           ? h('div.modifiers',
               h('h3.subhead', t('panel.inEffect', 'In effect')),
@@ -1285,14 +1624,156 @@ export class GameScreen {
           : h('div.detail__actions',
               h('h3.subhead', t('orders.orderAgainst', 'Order against this country')),
               h('div.detail__buttons',
-                ACTIONS.filter((a) => a.target === 'nation' && actionAvailability(game, a, id).ok).map((a) =>
+                targetedActionsFor(game, id).map((a) =>
                   h('button.btn.btn--ghost.btn--sm', {
+                    title: tAction(a, 'blurb'),
                     onclick: () => { this.#closeDetail(); this.#queueAction(a, id); },
                   }, tAction(a)),
                 ),
               ),
             ),
       ),
+    );
+  }
+
+  // ── The country file, book by book ───────────────────────────────────────
+
+  #detailEconomy(id, state) {
+    const game = this.game;
+    const outlook = growthOutlook(game, id);
+    const books = ledgerFor(game, id);
+    const worldGdp = sovereignIds(game).reduce((sum, n) => sum + game.nations[n].gdp, 0) || 1;
+    const owed = debtOf(state);
+
+    return h('div.detail__section',
+      h('h3.subhead', t('detail.economy', 'The economy')),
+      h('div.detail__grid',
+        detailStat(t('stat.gdp', 'GDP'), `$${state.gdp.toFixed(2)}T`,
+          `${rankLabel(game, rankOf(game, id, (s) => s.gdp))} · ${((state.gdp / worldGdp) * 100).toFixed(1)}% of world`),
+        detailStat(t('stat.perCapita', 'Per head'), formatPerCapita(state),
+          rankLabel(game, rankOf(game, id, (s) => (s.gdp / Math.max(s.population, 0.01)) * 1e6))),
+        detailStat(t('stat.growth', 'Growth next quarter'), `${outlook.growth >= 0 ? '+' : '−'}${Math.abs(outlook.growth).toFixed(2)}%`,
+          t('detail.annualised', '{n}% annualised', { n: (outlook.growth * 4).toFixed(1) })),
+        owed > 0
+          ? detailStat(t('hud.debt', 'Debt'), money(owed),
+              t('hud.pctOfGdp', '{pct}% of GDP', { pct: ((owed / (state.gdp * 1000)) * 100).toFixed(0) }))
+          : detailStat(t('stat.treasury', 'Treasury'), money(state.treasury),
+              t('hud.pctOfGdp', '{pct}% of GDP', { pct: ((state.treasury / (state.gdp * 1000)) * 100).toFixed(0) })),
+        detailStat(t('detail.revenue', 'Revenue'), `${money(books.revenue)}/q`,
+          t('detail.collection', '{pct}% collected', { pct: Math.round(books.collection * 100) })),
+        detailStat(t('detail.upkeep', 'Forces upkeep'), `${money(books.upkeep)}/q`,
+          t('detail.netBalance', 'net {amount}', { amount: money(books.net) })),
+      ),
+      outlook.drivers.length
+        ? h('div.drivers',
+            outlook.drivers.slice(0, 5).map((d) =>
+              h('span.driver', { class: d.value >= 0 ? 'driver is-up' : 'driver is-down' },
+                `${t(`driver.${d.label}`, d.label)} ${d.value >= 0 ? '+' : '−'}${Math.abs(d.value).toFixed(2)}`)),
+          )
+        : null,
+    );
+  }
+
+  #detailPeople(id, state) {
+    const game = this.game;
+    const land = formatArea(game, id);
+    const area = areaOf(game, id);
+    const worldPop = sovereignIds(game).reduce((sum, n) => sum + game.nations[n].population, 0) || 1;
+    const density = area > 0 ? (state.population * 1e6) / (area * 1000) : 0;
+
+    return h('div.detail__section',
+      h('h3.subhead', t('detail.peopleAndLand', 'People and ground')),
+      h('div.detail__grid',
+        detailStat(t('stat.people', 'Population'), `${Math.round(state.population)}M`,
+          `${rankLabel(game, rankOf(game, id, (s) => s.population))} · ${((state.population / worldPop) * 100).toFixed(1)}% of world`),
+        detailStat(t('stat.land', 'Land held'), land.text,
+          land.change === null
+            ? rankLabel(game, rankOf(game, id, (s, g) => areaOf(g, s.id)))
+            : t('context.sinceStart', '{delta}% since {date}', {
+                delta: deltaLabel(land.change),
+                date: `Q1 ${game.year - Math.floor(game.turn / 4)}`,
+              })),
+        detailStat(t('detail.density', 'Density'), `${Math.round(density)}/km²`,
+          density > 200 ? t('detail.crowded', 'crowded') : density > 40 ? t('detail.settled', 'settled') : t('detail.empty', 'thinly settled')),
+      ),
+    );
+  }
+
+  #detailForce(id, state) {
+    const game = this.game;
+    const deployable = combatPower(game, id);
+    const wars = game.wars.filter((w) => w.attackers.includes(id) || w.defenders.includes(id));
+    const active = wars.filter((w) => w.active);
+
+    return h('div.detail__section',
+      h('h3.subhead', t('detail.force', 'What it can fight with')),
+      h('div.detail__grid',
+        detailStat(t('stat.military', 'Military'), Math.round(state.military),
+          `${bandOf('military', state.military)} · ${rankLabel(game, rankOf(game, id, (s) => s.military))}`),
+        detailStat(t('stat.readiness', 'Readiness'), Math.round(state.readiness), bandOf('readiness', state.readiness)),
+        detailStat(t('detail.deployable', 'Deployable power'), deployable.toFixed(0),
+          rankLabel(game, rankOf(game, id, (s, g) => combatPower(g, s.id)))),
+        detailStat(t('stat.nukes', 'Warheads'), state.nukes ? state.nukes.toLocaleString() : '—',
+          state.nukes ? rankLabel(game, rankOf(game, id, (s) => s.nukes)) : t('detail.noArsenal', 'no arsenal')),
+        detailStat(t('detail.wars', 'Wars'), `${active.length}`,
+          t('detail.warsFought', '{n} fought this run', { n: wars.length })),
+      ),
+    );
+  }
+
+  #detailCohesion(id, state) {
+    const game = this.game;
+    const row = (key, invert = false) => {
+      const ctx = statContext(game, id, key);
+      return detailStat(statLabel(key), ctx.value,
+        `${ctx.band}${ctx.delta ? ` · ${deltaLabel(ctx.delta)} this quarter` : ''}${invert ? '' : ''}`);
+    };
+    return h('div.detail__section',
+      h('h3.subhead', t('detail.cohesion', 'Whether it holds together')),
+      h('div.detail__grid',
+        row('stability'),
+        row('approval'),
+        row('unrest', true),
+        detailStat(t('stat.tech', 'Technology'), Math.round(state.tech),
+          `${bandOf('tech', state.tech)} · ${rankLabel(game, rankOf(game, id, (s) => s.tech))}`),
+      ),
+    );
+  }
+
+  #detailStanding(id, state, def) {
+    const game = this.game;
+    const power = powerContext(game, id);
+    const blocs = blocsOf(game, id);
+    const others = sovereignIds(game).filter((n) => n !== id);
+    const friends = others.filter((n) => getRelation(game, id, n) >= 40).length;
+    const foes = others.filter((n) => getRelation(game, id, n) <= -40).length;
+    const threat = threatOf(game, id);
+
+    return h('div.detail__section',
+      h('h3.subhead', t('detail.standing', 'How the world sees it')),
+      h('div.detail__grid',
+        detailStat(t('stat.influence', 'Influence'), Math.round(state.influence),
+          `${bandOf('influence', state.influence)} · ${rankLabel(game, rankOf(game, id, (s) => s.influence))}`),
+        detailStat(t('stat.powerRank', 'Power rank'), `#${power.rank}`,
+          t('detail.ofLeader', '{pct}% of the leading power', { pct: Math.round(power.share * 100) })),
+        detailStat(t('detail.friends', 'Friendly states'), `${friends}`,
+          t('detail.hostileStates', '{n} hostile', { n: foes })),
+        detailStat(t('detail.threat', 'Seen as a threat'), `${Math.round(threat * 100)}`,
+          threat >= 0.6 ? t('detail.threatHigh', 'others will combine against it')
+            : threat >= 0.35 ? t('detail.threatSome', 'watched closely')
+              : t('detail.threatLow', 'nobody is alarmed')),
+      ),
+      blocs.length
+        ? h('div.chips.chips--tight',
+            blocs.map((blocId) => h('span.blocchip',
+              { class: BLOCS[blocId]?.invented ? 'blocchip is-invented' : 'blocchip' },
+              t(`bloc.${blocId}`, BLOCS[blocId]?.name || blocId))),
+          )
+        : h('p.panel__note', t('detail.nonAligned', 'In no bloc.')),
+      (state.sanctionedBy || []).length
+        ? h('p.panel__note.panel__note--warn',
+            t('detail.sanctionedBy', 'Under sanctions from {n} state(s).', { n: state.sanctionedBy.length }))
+        : null,
     );
   }
 
@@ -1405,9 +1886,42 @@ function metric(label, value, hint, colour, context) {
   );
 }
 
-function detailStat(label, value) {
+function ledgerCell(label, value, context, colour = null) {
+  return h('div.ledger__cell',
+    h('span.ledger__label', label),
+    h('span.ledger__value', { style: colour ? { color: colour } : null }, value),
+    h('span.ledger__context', context),
+  );
+}
+
+function detailStat(label, value, context = null) {
   return h('div.detailstat',
     h('span.detailstat__label', label),
     h('span.detailstat__value', String(value)),
+    // A figure with nothing beside it is the flat number this interface exists
+    // to avoid: rank, share, band or direction, whichever says most.
+    context ? h('span.detailstat__context', context) : null,
+  );
+}
+
+/** A labelled series with its line and its two ends. */
+function trend(label, values, format) {
+  const series = (values || []).filter((v) => Number.isFinite(v));
+  const line = sparkline(series, { colour: 'var(--accent)' });
+  if (!line) return null;
+  const first = series[0];
+  const last = series[series.length - 1];
+  const change = first ? ((last - first) / Math.abs(first)) * 100 : 0;
+  return h('div.trend',
+    h('div.trend__head',
+      h('span.trend__label', label),
+      h('span.trend__change', { class: `trend__change ${change >= 0 ? 'is-up' : 'is-down'}` },
+        `${change >= 0 ? '+' : '−'}${Math.abs(change).toFixed(0)}%`),
+    ),
+    line,
+    h('div.trend__ends',
+      h('span', format(first)),
+      h('span', format(last)),
+    ),
   );
 }

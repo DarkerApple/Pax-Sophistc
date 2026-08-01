@@ -40,6 +40,41 @@ export const BLOCS = {
   asean: { id: 'asean', name: 'ASEAN', kind: 'economic', cohesion: 50 },
   au: { id: 'au', name: 'African Union', kind: 'political', cohesion: 38 },
   usAllied: { id: 'usAllied', name: 'US Treaty Network', kind: 'military', cohesion: 65 },
+
+  // Invented organisations of the late 2020s. They are not real, which is the
+  // point: a run should be able to produce a world whose alliance map no longer
+  // matches the one it started from, and blocs nobody has heard of are the
+  // clearest sign of that. Founders are seeded at world creation.
+  meridian: {
+    id: 'meridian', name: 'Meridian Compact', kind: 'political', cohesion: 34, invented: true,
+    founders: ['bra', 'zaf', 'idn', 'mex'],
+    brief: 'Middle powers who would rather not be asked to choose a side.',
+  },
+  lithiumUnion: {
+    id: 'lithiumUnion', name: 'Critical Minerals Union', kind: 'economic', cohesion: 47, invented: true,
+    founders: ['chl', 'arg', 'aus', 'kaz'],
+    brief: 'A producers’ cartel for the metals the energy transition runs on.',
+  },
+  sentinel: {
+    id: 'sentinel', name: 'Sentinel Pact', kind: 'military', cohesion: 58, invented: true,
+    founders: ['pol', 'swe', 'fin', 'ukr'],
+    brief: 'A frontier defence pact for states that stopped waiting for guarantees.',
+  },
+  blueWater: {
+    id: 'blueWater', name: 'Blue Water Forum', kind: 'military', cohesion: 44, invented: true,
+    founders: ['jpn', 'aus', 'phl', 'sgp'],
+    brief: 'Maritime democracies coordinating patrols across two oceans.',
+  },
+  sahelUnion: {
+    id: 'sahelUnion', name: 'Sahel Development Union', kind: 'economic', cohesion: 31, invented: true,
+    founders: ['nga', 'dza', 'mar', 'eth'],
+    brief: 'Infrastructure and water first, sovereignty arguments later.',
+  },
+  concord: {
+    id: 'concord', name: 'Digital Concord', kind: 'political', cohesion: 40, invented: true,
+    founders: ['kor', 'che', 'sgp', 'nld'],
+    brief: 'A standards bloc for chips, models and the rules that govern them.',
+  },
 };
 
 // Doctrine drives how an AI-run nation picks its moves each turn.
