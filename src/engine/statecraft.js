@@ -10,6 +10,7 @@
 // reproducible from its seed and a reload does not lose the map's new borders.
 
 import { BLOCS, NATIONS_BY_ID, registerNation } from '../data/nations.js';
+import { recordAggression } from './coalitions.js';
 import { t, tNation, tNationIn } from '../i18n/index.js';
 import {
   adjustRelation,
@@ -376,6 +377,9 @@ export function annexNation(game, victimId, conquerorId, rng, { reason = 'conque
   winner.stability = clamp(winner.stability - (rng ? rng.float(3, 9) : 6));
 
   addOccupationBurden(game, conquerorId, victimId, rng);
+  // Taking a whole country is the heaviest thing the world holds against you,
+  // and it is what turns a great power into a target.
+  recordAggression(game, conquerorId, 'annexation', 3.2);
 
   victim.sovereign = false;
   victim.annexedBy = conquerorId;

@@ -16,6 +16,7 @@ import {
   sovereignStates,
 } from './state.js';
 import { declareWar, findWar } from './war.js';
+import { alignedAgainst, threatOf } from './coalitions.js';
 
 const CATEGORY_TO_DOCTRINE_KEY = {
   economy: 'econ',
@@ -144,7 +145,27 @@ function considerWar(game, rng, mods, actorId) {
     nuclearDeterrent;
 
   if (!rng.bool(chance)) return null;
-  return declareWar(game, actorId, target.id, { rng, reason: 'territorial and security claims' });
+  return declareWar(game, actorId, target.id, {
+    rng, mods, reason: 'territorial and security claims',
+  });
+}
+
+/**
+ * The country this one is most alarmed by, if it is alarmed enough to act.
+ * Only a genuine threat qualifies, so most countries most of the time have
+ * nobody here and go about their own business.
+ */
+function mostThreatening(game, actorId) {
+  let worst = null;
+  let worstScore = 0.34;
+  for (const other of alignedAgainst(game, actorId)) {
+    const score = threatOf(game, other);
+    if (score > worstScore) {
+      worstScore = score;
+      worst = other;
+    }
+  }
+  return worst;
 }
 
 /**
@@ -163,6 +184,15 @@ export function runOpponents(game, rng, mods) {
     leading && rng.bool(mods.rivalCoordination)
       ? agents.filter((id) => getRelation(game, game.playerId, id) < -20)
       : [];
+
+  // Independently of difficulty: whoever the world currently finds dangerous
+  // gets aimed at. This is what makes an aggressive run feel like the board
+  // turning, rather than like the difficulty slider being nudged.
+  const containing = new Map();
+  for (const id of agents) {
+    const worst = mostThreatening(game, id);
+    if (worst) containing.set(id, worst);
+  }
 
   for (const id of rng.shuffle(agents)) {
     const state = game.nations[id];
@@ -189,7 +219,9 @@ export function runOpponents(game, rng, mods) {
     const pool = candidateActions(game, state, mods);
     if (!pool.length) continue;
 
-    const forcedTarget = coordinating.includes(id) ? game.playerId : null;
+    const forcedTarget = coordinating.includes(id)
+      ? game.playerId
+      : (containing.get(id) ?? null);
 
     const action = rng.weighted(pool, (a) => {
       const doctrineWeight = doctrine[CATEGORY_TO_DOCTRINE_KEY[a.category]] ?? 1;

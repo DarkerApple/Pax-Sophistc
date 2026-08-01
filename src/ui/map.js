@@ -13,7 +13,7 @@
 import { LANDMASSES, OCEANS } from '../data/geography.js';
 import { NATIONS_BY_ID } from '../data/nations.js';
 import { blocsOf, defOf, getRelation, livePower, sovereignIds, sovereignStates } from '../engine/state.js';
-import { areaOf, holders, outlineFor } from '../engine/territory.js';
+import { areaOf, holders, outlineFor, recentChanges } from '../engine/territory.js';
 import { t, tNation } from '../i18n/index.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
@@ -309,9 +309,36 @@ export class WorldMap {
       g.append(path);
     }
 
+    // Ground that changed hands recently, drawn over the fill. This is the
+    // front: it is how you see a war moving on the map quarter by quarter
+    // rather than only reading about it.
+    g.append(this.#front(game));
+
     this.outlineEl = svg('path', { class: 'map-territory__outline' });
     g.append(this.outlineEl);
     this.#drawOutline();
+    return g;
+  }
+
+  /** Cells taken in the last two quarters, this quarter's marked more strongly. */
+  #front(game) {
+    const g = svg('g', { class: 'map-front' });
+    const boxes = recentChanges(game, 1);
+    if (!boxes.length) return g;
+
+    for (const age of [1, 0]) {
+      const slice = boxes.filter((b) => game.turn - b.turn === age);
+      if (!slice.length) continue;
+      const d = slice.map((b) => {
+        const [x1, y1] = project(b.north, b.west);
+        const [x2, y2] = project(b.south, b.east);
+        return `M${x1.toFixed(2)},${y1.toFixed(2)}H${x2.toFixed(2)}V${y2.toFixed(2)}H${x1.toFixed(2)}Z`;
+      }).join('');
+      g.append(svg('path', {
+        d,
+        class: age === 0 ? 'map-front__now' : 'map-front__recent',
+      }));
+    }
     return g;
   }
 

@@ -26,6 +26,7 @@ import {
   transferLand,
 } from './territory.js';
 import { annexNation, isSovereign } from './statecraft.js';
+import { balancingChance, opposingCoalition, recordAggression } from './coalitions.js';
 
 const HOME_GROUND_BONUS = 1.18;
 // Wars used to grind for twenty quarters. They now reach a verdict in roughly
@@ -44,7 +45,7 @@ export function findWar(game, a, b) {
   );
 }
 
-export function declareWar(game, attackerId, defenderId, { rng, reason = 'unspecified aims' } = {}) {
+export function declareWar(game, attackerId, defenderId, { rng, reason = 'unspecified aims', mods = {} } = {}) {
   if (findWar(game, attackerId, defenderId)) return null;
   const attacker = NATIONS_BY_ID[attackerId];
   const defender = NATIONS_BY_ID[defenderId];
@@ -68,22 +69,14 @@ export function declareWar(game, attackerId, defenderId, { rng, reason = 'unspec
     nuclearUsed: false,
   };
 
-  // Treaty allies get dragged in, if the relationship is strong enough to hold.
-  for (const other of sovereignStates(game)) {
-    if (other.id === attackerId || other.id === defenderId) continue;
-    const def = NATIONS_BY_ID[other.id];
-    const toDefender = getRelation(game, other.id, defenderId);
-    const toAttacker = getRelation(game, other.id, attackerId);
-    const sharesDefencePact = (def.blocs || []).some(
-      (b) =>
-        ['nato', 'csto', 'usAllied'].includes(b) &&
-        (NATIONS_BY_ID[defenderId].blocs || []).includes(b),
-    );
-    const joinChance = sharesDefencePact ? 0.8 : toDefender > 70 && toAttacker < -20 ? 0.3 : 0;
-    if (joinChance > 0 && rng && rng.bool(joinChance)) {
-      war.defenders.push(other.id);
-    }
-  }
+  // Who else takes a side. Treaties still bind, but so does alarm: a country
+  // that has been taking other people's territory finds the region joining in
+  // whether or not anybody signed anything. See engine/coalitions.js.
+  const joiners = rng ? opposingCoalition(game, rng, attackerId, defenderId, mods) : [];
+  for (const joiner of joiners) war.defenders.push(joiner.id);
+  war.balancers = joiners.filter((j) => j.reason === 'balance').map((j) => j.id);
+
+  recordAggression(game, attackerId, 'war', 1.4);
 
   game.wars.push(war);
   game.worldTension = clamp(game.worldTension + 18, 0, 100);
@@ -92,15 +85,18 @@ export function declareWar(game, attackerId, defenderId, { rng, reason = 'unspec
     if (id !== defenderId) adjustRelation(game, attackerId, id, -30);
   }
 
+  const others = war.defenders.filter((d) => d !== defenderId);
+  const balancing = war.balancers.length;
   logEvent(game, {
     type: 'war',
     severity: 'critical',
     text: `${attacker.name} opens hostilities against ${defender.name}${
-      war.defenders.length > 1
-        ? `. ${war.defenders
-            .filter((d) => d !== defenderId)
-            .map((d) => NATIONS_BY_ID[d].name)
-            .join(', ')} honour ${defender.adjective} commitments.`
+      others.length
+        ? `. ${others.map((d) => defOf(game, d).name).join(', ')} ${
+            balancing
+              ? 'come in against it — most of them owe nobody anything, and say so'
+              : `honour ${defender.adjective} commitments`
+          }.`
         : '.'
     }`,
     nations: [attackerId, ...war.defenders],
@@ -178,6 +174,11 @@ export function tickWars(game, rng, mods) {
       }
     }
 
+    // A war does not have a fixed cast. Every quarter it runs, the aggressor's
+    // record grows and somebody else decides they cannot sit this one out.
+    const joined = recruitToWar(game, war, rng, mods);
+    if (joined) reports.push(joined);
+
     const advance = advanceFront(game, war, rng);
 
     const nuclearRisk = nuclearEscalationRisk(game, war, mods);
@@ -223,6 +224,50 @@ export function tickWars(game, rng, mods) {
 }
 
 /**
+ * One more country picks a side, mid-war.
+ *
+ * Coalitions are not assembled once at the declaration and then frozen. The
+ * longer an aggressor is winning, the heavier its record and the more likely
+ * the next country along decides it would rather fight now than later.
+ */
+function recruitToWar(game, war, rng, mods) {
+  if (game.turn - war.startTurn < 1) return null;
+  // Only against whoever is doing the taking.
+  const winning = war.warScore > 0 ? 'attackers' : 'defenders';
+  const losing = winning === 'attackers' ? 'defenders' : 'attackers';
+  if (Math.abs(war.warScore) < 20) return null;
+
+  const aggressor = war[winning][0];
+  const victim = war[losing][0];
+  const already = new Set([...war.attackers, ...war.defenders]);
+
+  const candidates = sovereignIds(game).filter((id) => !already.has(id));
+  if (!candidates.length) return null;
+
+  // One draw a quarter, weighted — a war should gather a coalition over
+  // several quarters, not acquire one wholesale.
+  const pick = rng.pick(candidates);
+  const chance = balancingChance(game, pick, aggressor, victim, mods) * 0.5;
+  if (!rng.bool(chance)) return null;
+
+  war[losing].push(pick);
+  if (!war.balancers) war.balancers = [];
+  war.balancers.push(pick);
+  adjustRelation(game, pick, aggressor, -45);
+  game.worldTension = clamp(game.worldTension + 5, 0, 100);
+
+  const text = t('war.joins',
+    '{joiner} enters the war against {aggressor}. It is owed nothing by {victim} and says so plainly.',
+    {
+      joiner: tNation(defOf(game, pick)),
+      aggressor: tNation(defOf(game, aggressor)),
+      victim: tNation(defOf(game, victim)),
+    });
+  logEvent(game, { type: 'war', severity: 'major', text, nations: [pick, aggressor] });
+  return { type: 'war-join', warId: war.id, title: 'A Third Party Enters', text, joinerId: pick };
+}
+
+/**
  * Push the front.
  *
  * The bite scales with how far ahead you are *and* with the force ratio, so a
@@ -250,18 +295,24 @@ function advanceFront(game, war, rng) {
 
   // 0 at the threshold, 1 at a total rout.
   const pressure = (Math.abs(lead) - 10) / 90;
-  const forceEdge = Math.min(
-    2.5,
-    Math.max(0.4, sidePower(game, gaining) / Math.max(0.01, sidePower(game, yielding))),
-  );
+  const rawEdge = sidePower(game, gaining) / Math.max(0.01, sidePower(game, yielding));
+  // Capped for the size of the bite — beyond a certain advantage you are limited
+  // by roads and fuel, not by the enemy — but the uncapped ratio still decides
+  // whether the country can be overrun at all.
+  const forceEdge = Math.min(2.5, Math.max(0.4, rawEdge));
   // Up to ~45% of what is left, in one quarter, when the rout is total and the
   // attacker outclasses the defender several times over.
   const fraction = Math.min(0.45, 0.04 + pressure * pressure * 0.34 * Math.sqrt(forceEdge));
   const wanted = held * fraction;
 
   // Beyond this the defender has no army left in the field and the rest of the
-  // country is simply occupied.
-  const total = Math.abs(lead) >= OVERWHELMING_SCORE && game.turn - war.startTurn >= 1;
+  // country is simply occupied. Being beaten badly is not the same as being
+  // erased: overrunning a country outright also needs a genuine capability gap,
+  // or every near-peer war that went one way would end with a country missing.
+  const total =
+    Math.abs(lead) >= OVERWHELMING_SCORE &&
+    rawEdge >= 3 &&
+    game.turn - war.startTurn >= 1;
   if (wanted < 800 && !total) return null;
 
   const anchor = frontAnchor(game, target, gainer);
@@ -400,6 +451,7 @@ function detonate(game, war, rng) {
   war.nuclearUsed = true;
   game.stats.nukesUsed += 1;
   game.worldTension = 100;
+  recordAggression(game, userId, 'nuclear', 5);
 
   for (const [id, factor] of [[victimId, 1], [userId, 0.55]]) {
     const state = game.nations[id];

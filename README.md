@@ -10,7 +10,7 @@ writes the briefings and judges your freeform orders — and every provider it s
 
 ```bash
 npm start          # http://localhost:5173
-npm test           # 113 engine, territory, AI-boundary, world-mode, map and translation tests
+npm test           # 124 engine, territory, coalition, AI-boundary, world and translation tests
 ```
 
 There is nothing to install. `npm start` runs a ~60-line static file server from
@@ -25,15 +25,18 @@ Each turn is one **quarter**. You get a budget (a share of GDP), some **politica
 and up to **four orders**. Then the other 55 countries take their turn, the world throws
 events at you, wars grind forward, and the books get balanced.
 
-- **65 orders** across Quick, Economy, Military, Diplomacy, Domestic, Intelligence and
-  Technology — from `Fiscal Stimulus` and `Semiconductor Self-Sufficiency` to
-  `Covert Destabilisation` and `Military Intervention`.
-- **A Quick tab that reads the room.** Eighteen one-capital quick orders, of which you are
-  shown the ones that answer *what actually happened*: `Emergency Relief Operation` after a
-  disaster, `Impose a Curfew` after a riot, `Reinforce the Front` in a war, `Draw on the
-  Reserves` when the treasury is empty, `Recognise the New State` the quarter a country
-  splits, `Open a Back Channel` when a ladder is climbing. It is a different shelf every
-  quarter, and the ones with nothing to answer are not on it.
+- **174 orders** across Quick, Economy, Military, Diplomacy, Domestic, Intelligence,
+  Technology and the War Room — from `Fiscal Stimulus` and `Semiconductor Self-Sufficiency`
+  to `Covert Destabilisation` and `Military Intervention`.
+- **A Quick tab that reads the room.** **124 one-capital quick orders**, of which you see
+  fourteen: the ones that answer *what is actually happening*. `Deploy the Gendarmerie` on
+  the fourth night of a riot, `Open the Archives` when your approval is gone, `Deny What You
+  Cannot Hold` when the front is collapsing, `Bring Forward the Bond Auction` when the
+  treasury is empty, `Recognise the Secession` the quarter a country splits, `Publish the
+  Intercepts` when a ladder is near the top, `Invite the Inspectors` when the world has
+  started calling you a problem. Every card says which situation put it there, the shelf is
+  spread across several of them rather than offering eight answers to one flood, and an
+  order with nothing to answer is simply not on it.
 - **A War Room** that only appears while you are fighting: major offensives, holding
   actions, mobilisation, strikes on logistics, a total war economy. These move the front,
   the exhaustion and the casualty count directly, not just your national statistics.
@@ -67,8 +70,18 @@ events at you, wars grind forward, and the books get balanced.
   stalemate, negotiated peace — or, if a losing nuclear power gets desperate enough and the
   difficulty is high enough, worse. Whoever is winning **takes ground quarter by quarter**;
   a decisive peace keeps it, an exhausted one hands every acre back.
+- **The world balances against you.** Attack somebody and the region takes a view. Every
+  country carries a **threat** reading built from its share of world power, what it has done
+  lately (wars opened, borders moved, states absorbed) and how much ground it has actually
+  gained; that reading pulls third parties into the war on the defending side whether or not
+  anyone signed a treaty, adds more of them each quarter the war runs, and cools relations
+  everywhere in between. A coalition does not need parity — that is the point of one. The
+  same arithmetic applies to the AI, so a runaway conqueror finds the board turning on it
+  too. Play quietly and none of it fires.
 - **Conquest.** A war that is being won by an overwhelming margin does not stop at
-  "decisive" — the front keeps moving until the country is taken. An absorbed state
+  "decisive" — the front keeps moving until the country is taken. Absorbing a country
+  outright also needs a real capability gap, so a near-peer can be beaten badly without
+  being erased: thirty-to-one takes three quarters, two-to-one moves the border and stops. An absorbed state
   drops out of the world (it stops acting, ranking and being acted on) but stays on
   the books, so the run can say what became of it — and if somebody takes the ground
   back, it is on the map again. Two war-room orders put this in your hands directly:
@@ -186,6 +199,9 @@ around them as territory.
   state of the world. `T` turns the fill off.
 - **Drag to pan, pinch to zoom.** Dragging pans rather than sweeping a text selection across
   every label, and two fingers zoom on a touch screen.
+- **The front, every quarter.** Ground that changed hands is outlined on the map — this
+  quarter's in the critical colour, last quarter's fading behind it — so a war is something
+  you watch move rather than only read about.
 - **Hover goes to the sidebar, not over the map.** Pointing at a country fills the *Country
   inspector* panel on the left; clicking pins it there, clicking again opens its full file.
   Nothing ever draws on top of the map.
@@ -374,7 +390,9 @@ src/
     difficulty.js     the slider → every knob in the simulation
     worldmodes.js     Stable / Current / Chaotic, composed with difficulty
     consequences.js   escalation ladders and chain reactions
-    territory.js      the land grid, and the outlines traced out of it
+    territory.js      the land grid, the outlines traced out of it, and the front
+    coalitions.js     threat, balancing coalitions, and containment
+    quickorders.js    the situational quick catalogue
     statecraft.js     secession, conquest, land sales, and changing sides
     causes.js         why an event happened, scored against live state
     finance.js        borrowing, interest, and the emergency programme

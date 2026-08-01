@@ -7,7 +7,12 @@
 // is a problem to manage rather than a state with no legal moves.
 // skills shift the success chance: weight is the swing between a stat of 0 and 100.
 
+import { NATIONS_BY_ID } from '../data/nations.js';
 import { availableFunds } from './finance.js';
+import { getRelation } from './state.js';
+import { neighboursOf } from './territory.js';
+import { threatOf } from './coalitions.js';
+import { QUICK_ORDERS } from './quickorders.js';
 
 export const CATEGORIES = [
   { id: 'quick', name: 'Quick', icon: '⚡', synthetic: true },
@@ -944,6 +949,10 @@ export const ACTIONS = [
   },
 ];
 
+// The situational quick shelf lives in its own file — a hundred-odd orders
+// would bury the thirty programmes that make up the rest of the catalogue.
+ACTIONS.push(...QUICK_ORDERS);
+
 export const ACTIONS_BY_ID = Object.fromEntries(ACTIONS.map((a) => [a.id, a]));
 
 /** Money cost in billions USD for a given nation. */
@@ -960,82 +969,243 @@ export function actionsInCategory(categoryId, game = null) {
  * What the world looks like right now, as a set of situation tags.
  *
  * Quick orders declare the situations they answer; this is what decides which
- * ones are on the table. The Quick tab used to be the same six cards for forty
- * quarters — now it is the shortlist a chief of staff would actually put in
- * front of you given what just happened.
+ * ones are on the table. With a catalogue this size the tags are what keep the
+ * shelf short — an order with nothing to answer is never offered, so what you
+ * see is what a chief of staff would actually have put in front of you given
+ * the morning's news.
+ *
+ * @returns {Set<string>}
  */
 export function situationTags(game) {
   const tags = new Set();
   const state = game.nations[game.playerId];
   if (!state) return tags;
+  const def = NATIONS_BY_ID[game.playerId] || {};
+  const tagsOf = def.tags || [];
+  const add = (tag, when) => { if (when) tags.add(tag); };
 
-  if (state.unrest > 45) tags.add('unrest');
-  if (state.unrest > 62) tags.add('inflation');
-  if (state.treasury < 0 || state.treasury < state.gdp * 8) tags.add('debt');
-  if (game.worldTension > 62) tags.add('tension');
+  // ── At home ─────────────────────────────────────────────────────────────
+  add('unrest', state.unrest > 45);
+  add('boiling', state.unrest > 68);
+  add('calm', state.unrest < 25);
+  add('unpopular', state.approval < 42);
+  add('popular', state.approval > 65);
+  add('fragile', state.stability < 48);
+  add('solid', state.stability > 72);
 
+  // ── Money ───────────────────────────────────────────────────────────────
+  add('debt', state.treasury < 0);
+  add('tight', state.treasury >= 0 && state.treasury < state.gdp * 15);
+  add('rich', state.treasury > state.gdp * 90);
+  add('inflation', state.unrest > 55 && state.treasury < state.gdp * 40);
+  add('stagnant', state.baseGrowth < 0.5);
+  add('growing', state.baseGrowth > 1.1);
+
+  // ── Standing ────────────────────────────────────────────────────────────
+  add('tension', game.worldTension > 62);
+  add('peaceful', game.worldTension < 38);
+  add('isolated', state.influence < 35);
+  add('influential', state.influence > 70);
+  add('sanctioned', (state.sanctionedBy || []).length > 0);
+
+  // ── Capability ──────────────────────────────────────────────────────────
+  add('techLead', state.tech > 78);
+  add('techLag', state.tech < 50);
+  add('hollowArmy', state.readiness < 55);
+  add('strongArmy', state.military > 70);
+  add('weakArmy', state.military < 35);
+  add('nuclear', state.nukes > 0);
+
+  // ── Character of the country, from its own sheet ─────────────────────────
+  add('energy', tagsOf.some((tg) => /energy|oil|gas|lng|opec|petro/.test(tg)));
+  add('maritime', tagsOf.some((tg) => /navy|strait|entrepot|port|island|shipping/.test(tg)));
+  add('agrarian', tagsOf.some((tg) => /agri|grain|breadbasket|food/.test(tg)));
+  add('exporter', tagsOf.some((tg) => /export|manufactur|trade-hub/.test(tg)));
+  add('resource', tagsOf.some((tg) => /rare-earth|mining|lithium|minerals|copper/.test(tg)));
+  add('aging', tagsOf.includes('aging'));
+  add('young', tagsOf.includes('demographic-dividend'));
+
+  // ── War ─────────────────────────────────────────────────────────────────
   const wars = game.wars.filter(
     (w) => w.active && (w.attackers.includes(game.playerId) || w.defenders.includes(game.playerId)),
   );
   if (wars.length) {
     tags.add('war');
-    if (wars.some((w) => w.casualties > 60_000)) tags.add('casualties');
+    let bestScore = -999;
+    let worstExhaustion = 0;
+    for (const war of wars) {
+      const attacking = war.attackers.includes(game.playerId);
+      bestScore = Math.max(bestScore, attacking ? war.warScore : -war.warScore);
+      worstExhaustion = Math.max(
+        worstExhaustion,
+        attacking ? war.exhaustion.attackers : war.exhaustion.defenders,
+      );
+      if (war.casualties > 60_000) tags.add('casualties');
+      if ((war.occupied || []).some(([, , holder]) => holder === game.playerId)) tags.add('occupier');
+      if ((war.occupied || []).some(([, from]) => from === game.playerId)) tags.add('occupied');
+    }
+    add('warWinning', bestScore > 20);
+    add('warLosing', bestScore < -20);
+    add('warExhausted', worstExhaustion > 55);
+    add('warStalled', Math.abs(bestScore) <= 20);
+  } else {
+    tags.add('peace');
   }
 
-  // Whatever the last quarter actually threw at you.
+  // ── Escalation ──────────────────────────────────────────────────────────
+  for (const [key, value] of Object.entries(game.escalation || {})) {
+    if (!key.includes(game.playerId)) continue;
+    if (value >= 3.5) tags.add('escalation');
+    if (value >= 7) tags.add('brink');
+  }
+
+  // ── The neighbourhood ───────────────────────────────────────────────────
+  const neighbours = neighboursOf(game, game.playerId).filter((id) => game.nations[id]);
+  for (const id of neighbours) {
+    const other = game.nations[id];
+    if (!other || other.sovereign === false) continue;
+    if (other.stability < 40) tags.add('neighbourCrisis');
+    if (getRelation(game, game.playerId, id) < -45) tags.add('hostileNeighbour');
+    if (game.wars.some((w) => w.active && (w.attackers.includes(id) || w.defenders.includes(id)))) {
+      tags.add('warNextDoor');
+    }
+  }
+
+  // ── Whatever the last quarter actually threw at you ──────────────────────
   for (const entry of (game.log || [])) {
     if (entry.turn < game.turn - 1) continue;
     if (entry.type === 'secession') tags.add('newState');
-    if (entry.type === 'conquest') tags.add('neighbourCrisis');
+    if (entry.type === 'conquest') tags.add('conquest');
+    if (entry.type === 'territory') tags.add('borderChange');
+    if (entry.type === 'nuclear') tags.add('nuclearUsed');
   }
   for (const report of (game.turnReports || []).slice(-1)) {
     for (const title of report.events || []) {
       const key = String(title).toLowerCase();
-      if (/disaster|earthquake|flood|cyclone|wildfire|harvest/.test(key)) tags.add('disaster');
+      if (/disaster|earthquake|flood|cyclone|wildfire/.test(key)) tags.add('disaster');
+      if (/harvest|famine/.test(key)) tags.add('famine');
       if (/epidemic|pandemic/.test(key)) tags.add('epidemic');
       if (/accident|plant|industrial/.test(key)) tags.add('accident');
-      if (/riot|protest|strike/.test(key)) tags.add('unrest');
-      if (/coup|assassination|attack/.test(key)) tags.add('neighbourCrisis');
-      if (/currency/.test(key)) tags.add('inflation');
+      if (/riot/.test(key)) tags.add('riot');
+      if (/protest|strike/.test(key)) tags.add('unrest');
+      if (/coup|junta/.test(key)) tags.add('coup');
+      if (/assassination|attack|terror/.test(key)) tags.add('attack');
+      if (/currency|credit|financial|market/.test(key)) tags.add('financial');
+      if (/cyber|intrusion/.test(key)) tags.add('cyber');
+      if (/commodity|price/.test(key)) tags.add('commodityShock');
+      if (/migration|displacement|refugee/.test(key)) tags.add('refugees');
+      if (/breakthrough|technolog/.test(key)) tags.add('breakthrough');
     }
   }
 
-  // A ladder you are standing on is a situation whether or not anything fired.
-  for (const key of Object.keys(game.escalation || {})) {
-    if (!key.includes(game.playerId)) continue;
-    if ((game.escalation[key] || 0) >= 3.5) {
-      tags.add('escalation');
-      break;
-    }
-  }
+  // ── The world's view of you ──────────────────────────────────────────────
+  const threat = threatOf(game, game.playerId);
+  add('feared', threat > 0.4);
+  add('pariah', threat > 0.6);
+
   return tags;
 }
 
 /**
- * Quick orders that answer something happening now, first; the standing ones
- * that always make sense after; and the ones that answer nothing at all left
- * off entirely. Deterministic — the same quarter always offers the same shelf.
+ * How much each situation demands an answer this quarter.
+ *
+ * Without this the shelf ranks by how many boxes an order ticks, which puts a
+ * jobs programme above reinforcing a collapsing front because the jobs
+ * programme happened to list three situations. What matters is not how many
+ * things an order is relevant to, but how loudly the loudest of them is
+ * shouting.
+ */
+const URGENCY = {
+  brink: 5, nuclearUsed: 5, boiling: 4.5, warLosing: 4.5,
+  coup: 4, conquest: 4, war: 4, riot: 4, disaster: 4, epidemic: 4, famine: 4,
+  debt: 3.5, occupied: 3.5, attack: 3.5,
+  accident: 3, financial: 3, escalation: 3, warExhausted: 3,
+  unrest: 2.5, refugees: 2.5, newState: 2.5, pariah: 2.5, warNextDoor: 2.5,
+  neighbourCrisis: 2, tension: 2, sanctioned: 2, occupier: 2, warWinning: 2,
+  inflation: 2, tight: 2, unpopular: 2, fragile: 2, cyber: 2,
+  commodityShock: 2, feared: 2, borderChange: 1.8, hostileNeighbour: 1.8,
+  casualties: 1.8, warStalled: 1.5, isolated: 1.5, techLag: 1.5,
+  hollowArmy: 1.5, stagnant: 1.5, weakArmy: 1.5, breakthrough: 1.5,
+};
+
+/** Background facts about a country are never urgent on their own. */
+const BACKGROUND_URGENCY = 0.5;
+
+/** The most pressing thing an order is an answer to, for the card to say. */
+export function reasonFor(action, tags) {
+  if (!action.situational) return null;
+  let best = null;
+  let bestWeight = -1;
+  for (const tag of action.situational) {
+    if (!tags.has(tag)) continue;
+    const weight = URGENCY[tag] ?? BACKGROUND_URGENCY;
+    if (weight > bestWeight) {
+      bestWeight = weight;
+      best = tag;
+    }
+  }
+  return best;
+}
+
+/**
+ * Quick orders that answer something happening now, most urgent first; the
+ * standing ones that always make sense after; and the ones that answer nothing
+ * at all left off entirely. Deterministic — the same quarter always offers the
+ * same shelf.
  */
 function rankQuick(game, quick) {
   const tags = situationTags(game);
   const scored = [];
+
   for (const action of quick) {
     const wants = action.situational;
     if (!wants) {
+      // The handful of orders that are always sensible sit at the bottom.
       scored.push({ action, score: 0 });
       continue;
     }
-    const hits = wants.filter((tag) => tags.has(tag)).length;
+    const hits = wants.filter((tag) => tags.has(tag));
     // A situational order with nothing to answer is noise on the shelf.
-    if (!hits) continue;
-    scored.push({ action, score: hits * 10 + wants.length });
+    if (!hits.length) continue;
+
+    const urgency = hits.reduce((sum, tag) => sum + (URGENCY[tag] ?? BACKGROUND_URGENCY), 0);
+    // An order aimed squarely at what is happening beats one that lists six
+    // situations and happens to catch this one.
+    const precision = hits.length / wants.length;
+    scored.push({ action, score: urgency + precision * 0.8 });
   }
-  // Capped, because a "quick" shelf of eighteen cards is not a quick shelf.
-  return scored
-    .sort((a, b) => b.score - a.score || a.action.id.localeCompare(b.action.id))
-    .slice(0, 10)
-    .map((entry) => entry.action);
+
+  scored.sort((a, b) => b.score - a.score || a.action.id.localeCompare(b.action.id));
+
+  // Capped, because a "quick" shelf of a hundred and twenty is not a quick
+  // shelf — and spread, because eight different answers to the same flood is a
+  // worse shelf than four answers to the flood and four to everything else that
+  // is also happening.
+  const perReason = new Map();
+  const shelf = [];
+  const overflow = [];
+  for (const entry of scored) {
+    const reason = reasonFor(entry.action, tags) || 'standing';
+    const used = perReason.get(reason) || 0;
+    if (used >= 4) {
+      overflow.push(entry);
+      continue;
+    }
+    perReason.set(reason, used + 1);
+    shelf.push(entry);
+    if (shelf.length >= SHELF_SIZE) break;
+  }
+  // If the world is only doing one thing, fall back to more of that one thing
+  // rather than showing a short shelf.
+  for (const entry of overflow) {
+    if (shelf.length >= SHELF_SIZE) break;
+    shelf.push(entry);
+  }
+  return shelf.map((entry) => entry.action);
 }
+
+/** How many quick orders the tab shows at once. */
+const SHELF_SIZE = 14;
 
 export function actionCost(action, nationState) {
   const pct = action.cost?.pctGdp || 0;

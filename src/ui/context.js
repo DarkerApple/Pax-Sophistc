@@ -193,7 +193,12 @@ export function gripOn(game, ladders = [], wars = []) {
       weight: 0.05 + ladder.value * 0.012,
     });
   }
-  for (const war of wars) pressures.push({ id: war.id, label: war.name, weight: 0.16 });
+  // Only wars that are still being fought. A war you have already won is not
+  // something running without you.
+  for (const war of wars) {
+    if (war.active === false) continue;
+    pressures.push({ id: war.id, label: war.name, weight: 0.16 });
+  }
   if (state.unrest > 60) pressures.push({ id: 'unrest', label: bandOf('unrest', state.unrest), weight: 0.1 });
   if (game.worldTension > 70) pressures.push({ id: 'tension', label: bandOf('tension', game.worldTension), weight: 0.08 });
 

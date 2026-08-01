@@ -90,6 +90,13 @@ export const KO = {
     'panel.escalationNote': '사다리가 높이 올라갈수록 더 크고 더 긴 보복이 돌아옵니다.',
     'inspector.hint': '지도에서 아무 나라나 가리키면 여기에 표시됩니다. 누르면 고정되고, 다시 누르면 상세 정보가 열립니다.',
     'inspector.pinned': '고정됨',
+    'inspector.formerState': '소멸한 국가',
+    'inspector.occupiedByYou': '당신이 점령해 통치하고 있습니다.',
+    'inspector.occupiedBy': '{nation}이(가) 점령해 통치하고 있습니다.',
+    'inspector.dissolved': '해체되었습니다. 아무도 영유를 주장하지 않습니다.',
+    'inspector.conqueredNote': '더 이상 스스로 결정하지 않고, 순위에도 나오지 않으며, 당신의 어떤 행동에도 반응하지 않습니다. 누군가 그 땅을 되찾으면 다시 여기에 나타납니다.',
+    'coalition.containment': '같은 주에 {n}개 정부가 {nation}을(를) 견제하려 움직였습니다. 그 누구도 동맹이라고 부르지는 않습니다.',
+    'war.joins': '{joiner}이(가) {aggressor}에 맞서 참전했습니다. {victim}에게 빚진 것은 없다고, 분명히 밝혔습니다.',
     'inspector.unpin': '고정 해제',
     'inspector.yourCountry': '내 나라',
     'inspector.zoomTo': '지도에서 보기',
@@ -185,6 +192,28 @@ export const KO = {
     'war.casualties': '{n}천 명 사상',
 
     // ── 지도 ────────────────────────────────────────────────────────────
+    'why.unrest': '민심', 'why.boiling': '거리', 'why.riot': '폭동', 'why.calm': '안정',
+    'why.unpopular': '지지율', 'why.popular': '지지율', 'why.fragile': '취약성',
+    'why.solid': '지금의 위치', 'why.debt': '부채', 'why.tight': '예산', 'why.rich': '흑자',
+    'why.inflation': '물가', 'why.stagnant': '침체', 'why.growing': '호황',
+    'why.tension': '세계 긴장', 'why.peaceful': '평온', 'why.isolated': '고립',
+    'why.influential': '영향력', 'why.sanctioned': '제재',
+    'why.techLead': '기술 우위', 'why.techLag': '기술 격차', 'why.hollowArmy': '준비태세',
+    'why.strongArmy': '군사력', 'why.weakArmy': '군사력', 'why.nuclear': '핵전력',
+    'why.energy': '에너지', 'why.maritime': '해양', 'why.agrarian': '수확',
+    'why.exporter': '수출', 'why.resource': '자원', 'why.aging': '인구 구조', 'why.young': '인구 구조',
+    'why.war': '전쟁', 'why.warWinning': '우세', 'why.warLosing': '열세', 'why.warExhausted': '전쟁 피로',
+    'why.warStalled': '교착', 'why.casualties': '사상자',
+    'why.occupier': '점령 통치', 'why.occupied': '피점령지',
+    'why.peace': '평시', 'why.escalation': '격화', 'why.brink': '벼랑 끝',
+    'why.neighbourCrisis': '이웃 정세', 'why.hostileNeighbour': '적대 이웃', 'why.warNextDoor': '이웃 전쟁',
+    'why.newState': '신생국', 'why.conquest': '정복', 'why.borderChange': '국경 변동',
+    'why.nuclearUsed': '핵 사용', 'why.disaster': '재해', 'why.famine': '수확',
+    'why.epidemic': '전염병', 'why.accident': '사고', 'why.coup': '쿠데타',
+    'why.attack': '테러', 'why.financial': '금융시장', 'why.cyber': '사이버 침투',
+    'why.commodityShock': '원자재 가격', 'why.refugees': '난민', 'why.breakthrough': '기술 돌파',
+    'why.feared': '외부의 시선', 'why.pariah': '외부의 시선',
+
     'pane.nation': '국정',
     'pane.map': '지도',
     'pane.briefing': '브리핑',
@@ -787,6 +816,43 @@ export const KO = {
 
   // 저장 파일에 영어로 남는 지속 효과 이름
   modifiers: {
+    'Jobs programme': '일자리 사업',
+    'Fuel subsidy': '유류 보조금',
+    'Rent controls': '임대료 규제',
+    'Heavier debt service': '늘어난 이자 부담',
+    'Investment chill': '투자 위축',
+    'Capital controls': '자본 통제',
+    'Capital flight': '자본 유출',
+    'Tight money': '긴축 통화',
+    'Reserve drawdown': '비축분 방출',
+    'Special economic zone': '경제특구',
+    'Sovereign fund': '국부펀드',
+    'Tourism boom': '관광 호황',
+    'Port capacity': '항만 처리능력',
+    'Garrison duty': '주둔 부담',
+    'Directed industry': '산업 통제 생산',
+    'Open borders': '국경 개방',
+    'Hardened infrastructure': '기반시설 방호',
+    'Open standards': '개방 표준',
+    'Research base': '연구 기반',
+    'Component reserve': '부품 비축',
+    'Grid resilience': '전력망 복원력',
+    'Baseload restored': '기저부하 회복',
+    'Connectivity': '연결성',
+    'Health capacity': '보건 역량',
+    'Water security': '물 안보',
+    'Contained outbreak': '통제된 유행',
+    'Uncontrolled outbreak': '통제 불능 유행',
+    'Reconstruction': '재건 사업',
+    'Safety programme': '안전 점검 사업',
+    'Disaster preparation': '재해 대비',
+    'Flood defences': '방조 시설',
+    'Better administration': '행정 개선',
+    'Border trade': '국경 교역',
+    'Offshore rights': '해양 권익',
+    'Pension savings': '연금 재정 절감',
+    'Export licences': '수출 허가',
+    'Constitutional settlement': '헌정 합의',
     'Price controls': '가격 통제',
     'Shortages': '물자 부족',
     'Fiscal consolidation': '재정 긴축',
@@ -1034,6 +1100,442 @@ export const KO = {
       name: '외세 개입 지목',
       blurb: '바깥의 누군가를 가리킵니다. 국내에서는 통하고, 국외에서는 대가가 따릅니다.',
     },
+    'riot-inquiry': {
+      name: '경찰 진압에 대한 독립 조사',
+      blurb: '판사를 임명하고 소환권을 주십시오. 보고서가 마음에 들지 않을 것은 감수해야 합니다.',
+    },
+    'meet-organisers': {
+      name: '시위 주최 측과 면담',
+      blurb: '행진을 이끄는 사람들을 청사 안으로 부릅니다. 그들을 인정해 주는 셈이지만, 효과가 있습니다.',
+    },
+    'release-detainees': {
+      name: '구금자 석방',
+      blurb: '단식 농성이 시작되기 전에 유치장을 비웁니다. 값싸고, 긴장을 풉니다.',
+    },
+    'deploy-gendarmerie': {
+      name: '치안기동대 투입',
+      blurb: '군도 아니고 경찰도 아닙니다. 그 차이를 모두가 알고, 아무도 좋아하지 않습니다.',
+    },
+    'youth-jobs': {
+      name: '청년 긴급 고용 사업',
+      blurb: '이달 안에 25세 미만 10만 명을 급여 대장에 올립니다.',
+    },
+    'open-archives': {
+      name: '기록 공개',
+      blurb: '지난 정부가 한 일을 공개합니다. 인기는 얻고, 그 안의 모두를 적으로 만듭니다.',
+    },
+    'sack-the-minister': {
+      name: '장관 경질',
+      blurb: '누군가는 나가야 합니다. 잃어도 괜찮은 계파의 사람을 고르십시오.',
+    },
+    'national-service': {
+      name: '국민개병제 발표',
+      blurb: '2년, 전원, 쓸 만한 면제는 없음. 복무 연령을 넘긴 모두에게 인기가 있습니다.',
+    },
+    'fuel-subsidy': {
+      name: '유류 보조금 부활',
+      blurb: '주유소 가격을 원래대로 되돌립니다. 거리는 멈추고, 적자가 시작됩니다.',
+    },
+    'rent-freeze': {
+      name: '임대료 동결',
+      blurb: '모든 도시에서 인기 있고, 결국 모든 도시에서 재앙이 됩니다.',
+    },
+    'amnesty': {
+      name: '일반 사면 선포',
+      blurb: '정치범 전원이 금요일에 걸어 나옵니다. 공개적으로 거는 도박입니다.',
+    },
+    'call-election': {
+      name: '조기 총선 실시',
+      blurb: '나라가 당신을 찾아오기 전에, 당신이 나라로 갑니다.',
+    },
+    'pay-the-nurses': {
+      name: '보건 노조와 타결',
+      blurb: '숫자를 주십시오. 비싸지만, 매일 밤 뉴스에 나오던 일이 끝납니다.',
+    },
+    'curfew-lift': {
+      name: '비상조치 해제',
+      blurb: '가져갔던 권한을 돌려줍니다. 스스로 하는 편이 떠밀려 하는 것보다 훨씬 값집니다.',
+    },
+    'language-concession': {
+      name: '언어법 양보',
+      blurb: '그 지방이 자기 말로 가르치게 두십시오. 비용은 없고, 원한 하나가 사라집니다.',
+    },
+    'bond-auction': {
+      name: '국채 입찰 앞당기기',
+      blurb: '창이 닫히기 전에 시장에 나갑니다. 금리는 흉하고 현금은 진짜입니다.',
+    },
+    'sell-the-airline': {
+      name: '국적항공사 민영화',
+      blurb: '모두가 애착을 가지지만 아무도 돈을 대려 하지 않는 것을 팝니다.',
+    },
+    'windfall-tax': {
+      name: '에너지 대기업 횡재세',
+      blurb: '그들은 아주 좋은 해를 보냈고, 그 숫자를 모두가 압니다.',
+    },
+    'capital-controls': {
+      name: '자본 통제 시행',
+      blurb: '문을 닫습니다. 나간 돈은 나간 채로, 남은 돈은 더 나가지 못합니다.',
+    },
+    'rate-hike': {
+      name: '기준금리 인상',
+      blurb: '물가 악순환을 다른 무언가를 부수어 끊습니다. 놔두면 중앙은행이 욕을 먹어 줍니다.',
+    },
+    'strategic-reserve': {
+      name: '전략비축유 방출',
+      blurb: '비축분을 시장에 풉니다. 여섯 주 정도 가격이 움직입니다.',
+    },
+    'food-imports': {
+      name: '긴급 곡물 수입',
+      blurb: '값이 얼마든 사들입니다. 빵 줄은 경제 문제가 아니라 정치 사건입니다.',
+    },
+    'special-economic-zone': {
+      name: '경제특구 지정',
+      blurb: '항구 하나, 규칙 한 벌, 모든 것에 대한 예외 하나. 대개 통하고 결코 확산되지 않습니다.',
+    },
+    'tax-amnesty': {
+      name: '역외 자금 사면',
+      blurb: '들여오고, 조금만 내고, 아무것도 묻지 않습니다. 몹시 볼썽사납고 대단히 효과적입니다.',
+    },
+    'cut-the-subsidies': {
+      name: '보조금 폐지',
+      blurb: 'IMF는 찬성할 것입니다. 다른 누구도 찬성하지 않습니다.',
+    },
+    'open-the-fund': {
+      name: '국부펀드 설립',
+      blurb: '흑자를 써 없어질 곳이 아니라 불어날 곳에 둡니다.',
+    },
+    'infrastructure-bond': {
+      name: '디아스포라 채권 발행',
+      blurb: '떠난 사람들에게 그들이 떠난 나라를 위해 돈을 대달라고 합니다. 뜻밖에 많이들 응합니다.',
+    },
+    'cut-the-fleet': {
+      name: '함대 퇴역',
+      blurb: '3년째 승조원을 태우지 못한 함정을 팝니다. 제독들이 신문에 기고할 것입니다.',
+    },
+    'tourism-campaign': {
+      name: '국제 관광 캠페인',
+      blurb: '여섯 개 수도의 공항 광고를 사고, 1년간 아무 일도 터지지 않기를 바랍니다.',
+    },
+    'port-expansion': {
+      name: '주력항 증심 준설',
+      blurb: '파고, 넓혀서, 이웃의 컨테이너 물동량을 빼앗아 옵니다.',
+    },
+    'mineral-auction': {
+      name: '광업권 경매',
+      blurb: '지금 면허를 팔고 30년치 로열티도 팝니다. 둘 중 하나만 당신 문제입니다.',
+    },
+    'night-raids': {
+      name: '종심 타격 승인',
+      blurb: '소규모 팀을, 전선 훨씬 뒤로, 대체 비용이 비싼 표적에.',
+    },
+    'evacuate-civilians': {
+      name: '국경 지역 소개',
+      blurb: '전선이 닿기 전에 25만 명을 서쪽으로 옮깁니다.',
+    },
+    'scorched-earth': {
+      name: '지킬 수 없는 것은 남기지 않기',
+      blurb: '보급창을 태우고, 다리를 끊고, 우물을 못 쓰게 합니다. 합법이고, 용서받지 못합니다.',
+    },
+    'prisoner-exchange': {
+      name: '포로 교환 협상',
+      blurb: '전원 대 전원. 교전 중인 두 정부가 여전히 합의할 수 있는 유일한 일입니다.',
+    },
+    'war-bonds': {
+      name: '전시 국채 발행',
+      blurb: '지지한다고 말하는 그 일에 국민이 돈을 대게 합니다. 청약률이 진짜 여론조사입니다.',
+    },
+    'field-hospitals': {
+      name: '야전병원 전개',
+      blurb: '전방 분류, 항공 후송. 전사자는 절반으로, 부상자는 두 배로 만듭니다.',
+    },
+    'rotate-the-front': {
+      name: '전선 부대 교대',
+      blurb: '개전 이래 그 자리에 있던 부대를 뺍니다. 그들이 아는 모든 것이 함께 빠집니다.',
+    },
+    'court-martial': {
+      name: '지휘관 군법회의 회부',
+      blurb: '누군가 돌출부를 잃었습니다. 공개적으로 처리하고, 후임이 낫기를 바랍니다.',
+    },
+    'civil-defence': {
+      name: '민방위 총동원',
+      blurb: '대피소, 사이렌, 모든 학교의 훈련. 암울하고, 사람들이 보고 싶어 하는 것입니다.',
+    },
+    'arm-the-partisans': {
+      name: '저항 세력 무장',
+      blurb: '점령지 어딘가에서 누군가는 아직 싸우고 있습니다. 필요한 것을 주십시오.',
+    },
+    'humanitarian-corridor': {
+      name: '인도주의 통로 개방',
+      blurb: '하루 여섯 시간, 도로 하나, 모두가 지켜봅니다. 국내보다 국외에서 값이 나갑니다.',
+    },
+    'garrison-the-gains': {
+      name: '점령지 주둔',
+      blurb: '빼앗은 것을 전선에 못 갈 병력으로 지킵니다. 그것이 유지 비용입니다.',
+    },
+    'parade-the-victory': {
+      name: '전승 열병식',
+      blurb: '아직 사실일 때 대로에 전차를 세웁니다. 이만큼 분기를 사 주는 것은 없습니다.',
+    },
+    'quiet-ceasefire': {
+      name: '휴전 타진',
+      blurb: '평화가 아니라 중지입니다. 부인 가능하게, 당신에게 빚진 것 없는 제3국을 통해서.',
+    },
+    'conscript-industry': {
+      name: '공장 생산 전환 명령',
+      blurb: '자동차 공장에 이제 무엇을 만드는지 알려 줍니다. 통하고, 그들은 결코 완전히 돌아가지 않습니다.',
+    },
+    'emergency-summit': {
+      name: '긴급 정상회의 소집',
+      blurb: '이번 주 안에 한자리에 모읍니다. 절반의 가치는 소집한 사람이 당신이라는 데 있습니다.',
+    },
+    'offer-mediation': {
+      name: '중재 제안',
+      blurb: '남의 전쟁, 당신의 호텔, 모든 사진 속의 당신 외교장관.',
+    },
+    'recognise-government': {
+      name: '신정부 승인',
+      blurb: '옆 나라에서 누군가 힘으로 권력을 잡았습니다. 빨리 정하는 것 자체가 결정입니다.',
+    },
+    'expel-diplomats': {
+      name: '외교 공관원 추방',
+      blurb: '48시간, 공관 전원. 한 가지를 말하고, 아주 분명하게 말합니다.',
+    },
+    'state-visit': {
+      name: '국빈 방문',
+      blurb: '사흘, 만찬 한 번, 그리고 반년 전에 이미 합의된 서명 하나.',
+    },
+    'aid-package': {
+      name: '원조 패키지 전달',
+      blurb: '당신보다 더 나쁜 분기를 보내는 쪽에 돈과 물자를.',
+    },
+    'un-resolution': {
+      name: '결의안 상정',
+      blurb: '거부권에 막힐 것입니다. 결과가 아니라 표결이 목적입니다.',
+    },
+    'visa-liberalisation': {
+      name: '비자 개방',
+      blurb: '묻지 말고 오게 하십시오. 이만큼 값싸게 호의를 사는 방법은 없습니다.',
+    },
+    'join-the-bloc': {
+      name: '가입 신청',
+      blurb: '서류를 공개적으로 시작합니다. 협상이 열리기 전에 스스로를 묶는 일입니다.',
+    },
+    'neutrality-declaration': {
+      name: '공식 중립 선언',
+      blurb: '어느 진영에도 속하지 않겠다고 밝힙니다. 양쪽 다 그것을 수상하게 여길 것입니다.',
+    },
+    'host-the-talks': {
+      name: '회담 개최',
+      blurb: '중립적인 도시, 긴 탁자, 그리고 양측 대표단 뒤의 당신 국기.',
+    },
+    'recall-for-consultation': {
+      name: '본국 소환 협의',
+      blurb: '추방은 아닙니다. 그보다 얼마나 약한 조치인지 모두가 정확히 압니다.',
+    },
+    'congratulate-quietly': {
+      name: '조용한 축하 전달',
+      blurb: '보도자료는 없습니다. 기억할 사람에게 인편으로 전하는 서한 한 통.',
+    },
+    'sanctions-relief': {
+      name: '제재 완화',
+      blurb: '엉뚱한 사람을 다치게 하던 것들을 풉니다. 나머지는 공으로 챙깁니다.',
+    },
+    'defence-guarantee': {
+      name: '안전보장 제공',
+      blurb: '남의 국경에 당신의 이름을 올립니다. 외교에서 가장 비싼 한 문장입니다.',
+    },
+    'plug-the-leak': {
+      name: '유출자 색출',
+      blurb: '건물 안 누군가가 말하고 있습니다. 층까지, 그다음 자리까지 좁힙니다.',
+    },
+    'harden-the-grid': {
+      name: '전력망 보안 강화',
+      blurb: '망 분리가 가능한 것은 분리하고, 불가능한 것이 얼마나 많은지 받아들입니다.',
+    },
+    'turn-an-asset': {
+      name: '포섭',
+      blurb: '관리 한 명, 원한 하나, 아주 긴 대화 한 번.',
+    },
+    'counter-disinfo': {
+      name: '허위정보 대응반 신설',
+      blurb: '국내에서 읽히는 사건의 판본만 전담하는 팀을 세웁니다.',
+    },
+    'buy-the-satellite-time': {
+      name: '상업위성 촬영 구매',
+      blurb: '어젯밤 무엇이 움직였는지 알기 위해 자체 위성망이 필요하지는 않습니다.',
+    },
+    'publish-the-intercepts': {
+      name: '감청 자료 공개',
+      blurb: '논쟁에서 이기려고 정보원을 태웁니다. 때로는 그 논쟁이 더 값집니다.',
+    },
+    'vet-the-officers': {
+      name: '장교단 신원 재검증',
+      blurb: '대령 이상 전원의 파일을 읽습니다. 무언가 나올 것이고, 나온 대가를 치릅니다.',
+    },
+    'trace-the-money': {
+      name: '자금 추적',
+      blurb: '네 개 관할을 거쳐 따라가고, 다섯 번째를 공개합니다.',
+    },
+    'safe-passage': {
+      name: '안전 출국 보장',
+      blurb: '진 쪽이 조용히 떠나게 둡니다. 남아서 할 일보다 값이 쌉니다.',
+    },
+    'close-the-embassy': {
+      name: '공관 폐쇄',
+      blurb: '주재국 정보기관이 요란하게 하기 전에 먼저 거점을 닫습니다.',
+    },
+    'poach-the-researchers': {
+      name: '연구진 영입',
+      blurb: '연구실 셋, 마흔 명, 값은 얼마든. 논문은 사람을 따라옵니다.',
+    },
+    'open-source-mandate': {
+      name: '공개 표준 의무화',
+      blurb: '한 업체가 정부 전체를 쥔 상태를 끊습니다. 10년치 예산을 아낍니다.',
+    },
+    'national-lab': {
+      name: '국립연구소 설립',
+      blurb: '건물 하나, 문제 하나, 20년. 테이프는 후임자가 끊습니다.',
+    },
+    'chip-stockpile': {
+      name: '핵심 부품 비축',
+      blurb: '만들 수 없는 것을 2년치 사둡니다. 전략이 아니라 시간입니다.',
+    },
+    'grid-storage': {
+      name: '전력 저장 확충',
+      blurb: '어려운 쪽은 애초에 발전이 아니었습니다.',
+    },
+    'reactor-restart': {
+      name: '원자로 재가동',
+      blurb: '이제는 아무도 그만큼 또렷이 기억하지 못하는 이유로 멈춰 세웠던 것들.',
+    },
+    'undersea-cable': {
+      name: '해저 케이블 부설',
+      blurb: '경쟁국을 거치지 않는 세계로 가는 경로 하나 더.',
+    },
+    'vaccine-plant': {
+      name: '백신 공장 건설',
+      blurb: '다음에는 줄에서 아홉 번째가 되지 않도록.',
+    },
+    'desalination': {
+      name: '해수 담수화 발주',
+      blurb: '비싼 물이 물 없는 것보다 낫고, 논쟁은 거기서 끝납니다.',
+    },
+    'launch-window': {
+      name: '발사 슬롯 구매',
+      blurb: '남의 로켓, 당신의 위성, 페어링에 그려진 당신 국기.',
+    },
+    'airlift': {
+      name: '공수 작전 명령',
+      blurb: '보유한 모든 수송기가, 한 개 주를 향해, 오늘 밤부터.',
+    },
+    'accept-foreign-aid': {
+      name: '외국 지원 수용',
+      blurb: '도움을 받겠다고 말합니다. 인정이기도 하고, 사람을 살리기도 합니다.',
+    },
+    'quarantine-province': {
+      name: '해당 주 봉쇄',
+      blurb: '피해 지역을 둘러쌉니다. 효과가 있고, 그 안의 모두를 적으로 만듭니다.',
+    },
+    'mass-vaccination': {
+      name: '전 국민 접종 캠페인',
+      blurb: '가진 전부를, 팔에, 8주 안에.',
+    },
+    'rebuild-programme': {
+      name: '재건 계획 발표',
+      blurb: '숫자 하나, 날짜 하나, 그리고 이 일만 맡는 장관 한 명.',
+    },
+    'safety-review': {
+      name: '전국 안전 점검 지시',
+      blurb: '모든 발전소, 모든 댐, 모든 교량. 합계가 마음에 들지 않을 것입니다.',
+    },
+    'compensate-the-families': {
+      name: '유가족 보상',
+      blurb: '지금, 공개적으로, 두 번 요청하게 만들지 말고 지급하십시오.',
+    },
+    'refugee-camps': {
+      name: '수용 시설 개설',
+      blurb: '발표와 무관하게 그들은 옵니다. 정돈된 편이 낫습니다.',
+    },
+    'firebreaks': {
+      name: '방화선 개설',
+      blurb: '시즌 중이 아니라 시즌 전에 회랑을 밀어둡니다.',
+    },
+    'flood-defences': {
+      name: '방조제 증축',
+      blurb: '콘크리트 1미터. 보이지 않거나, 모두가 기억하는 유일한 것이 되거나 둘 중 하나입니다.',
+    },
+    'fortify-the-border': {
+      name: '국경 요새화',
+      blurb: '참호, 지뢰, 감시장비. 지도 위의 선이 이제 땅 위의 선이 됩니다.',
+    },
+    'buy-the-province': {
+      name: '영토 매입 협상 개시',
+      blurb: '전례가 있습니다. 대안보다 값싸고, 아무도 잊지 않습니다.',
+    },
+    'resettle-the-frontier': {
+      name: '접경지 이주 정책',
+      blurb: '막 빼앗은 땅에 사람을 들입니다. 국경이 영구화되는 방식입니다.',
+    },
+    'autonomy-offer': {
+      name: '해당 지역 자치 부여',
+      blurb: '그쪽이 스스로 의회를 선포하기 전에 의회를 줍니다.',
+    },
+    'census': {
+      name: '전국 인구 총조사',
+      blurb: '실제로 누가 어디 사는지 확인합니다. 어떤 답이든 누군가에게는 정치적으로 불편합니다.',
+    },
+    'border-market': {
+      name: '국경 시장 개설',
+      blurb: '양쪽이 밤에 두 배 값으로 하던 거래를 대낮에 하게 합니다.',
+    },
+    'demilitarised-zone': {
+      name: '비무장지대 제안',
+      blurb: '양쪽 10킬로미터, 어느 쪽도 통제하지 못하는 제3자가 감시.',
+    },
+    'name-the-territory': {
+      name: '편입 영토 개명',
+      blurb: '새 표지판, 새 지도, 새 교과서. 사소하고, 그 논쟁은 한 세기 갑니다.',
+    },
+    'recognise-independence': {
+      name: '분리 독립 승인',
+      blurb: '이미 벌어진 일을 받아들이고, 받아들인 공을 챙깁니다.',
+    },
+    'coastal-claim': {
+      name: '대륙붕 경계 주장 제출',
+      blurb: '해저 조사 200쪽과 그 아래 모든 것에 대한 권리 주장.',
+    },
+    'open-the-inspectors': {
+      name: '사찰단 초청',
+      blurb: '보게 하십시오. 무엇을 가졌는지에 대한 논쟁을 끝내는 유일한 방법입니다.',
+    },
+    'unilateral-drawdown': {
+      name: '일방적 병력 감축 발표',
+      blurb: '요청받지 않고 상대 국경에서 물러납니다. 강함으로도, 두려움으로도 읽힙니다.',
+    },
+    'reparations-fund': {
+      name: '배상 기금 설립',
+      blurb: '한 일에 대해 값을 치릅니다. 비싸고, 실제로 통하는 유일한 방법입니다.',
+    },
+    'charm-offensive': {
+      name: '대표단 파견',
+      blurb: '4주에 열두 개 수도. 그중 어디도 설득당할 생각은 없습니다.',
+    },
+    'no-first-use': {
+      name: '핵 선제 불사용 선언',
+      blurb: '가진 것 중 최악에 대한 약속. 사람들이 그렇다고 믿는 만큼만 값이 나갑니다.',
+    },
+    'pension-reform': {
+      name: '연금 수급 연령 상향',
+      blurb: '10년에 걸쳐 2년. 필요하다는 데는 모두 동의하고, 아무도 용서하지 않습니다.',
+    },
+    'commercialise-it': {
+      name: '연구 성과 상용화',
+      blurb: '남이 먼저 하기 전에 실험실에서 꺼내 수출 허가로 옮깁니다.',
+    },
+    'constitutional-settlement': {
+      name: '헌정 합의 국민투표',
+      blurb: '답이 의심스럽지 않을 만큼 강할 때 체제를 고정합니다.',
+    },
     'annex-territory': {
       name: '점령지 병합',
       blurb: '더 이상 점령이라고 부르지 않습니다. 군이 쥔 땅이 전부 우리 것이 되고, 어떤 강화 조약도 되돌려주지 못합니다.',
@@ -1051,9 +1553,9 @@ export const KO = {
     'strike-logistics': { name: '보급선 타격', blurb: '교량, 보급창, 철도 분기점. 화려하지 않지만 전투를 가장 많이 결정합니다.' },
     'war-economy': { name: '총력전 경제', blurb: '민간 산업을 전환합니다. 이제 모든 것이 전선을 위한 것이고, 부족도 함께 옵니다.' },
 
-    'state-visit': { name: '국빈 방문', blurb: '악수와 공동성명, 그리고 공동성명보다 중요한 사진 한 장.' },
+    'make-the-state-visit': { name: '국빈 방문', blurb: '악수와 공동성명, 그리고 공동성명보다 중요한 사진 한 장.' },
     'defence-pact': { name: '방위 조약 제안', blurb: '상호 보장. 구속력이 있고 비싸며, 제3국은 위협으로 읽습니다.' },
-    'aid-package': { name: '대외 원조', blurb: '자국 국기가 찍힌 상자에 담긴 개발 자금.' },
+    'send-aid': { name: '대외 원조', blurb: '자국 국기가 찍힌 상자에 담긴 개발 자금.' },
     multilateral: { name: '다자 이니셔티브', blurb: '정상회의를 소집하고 실무그룹을 주재하며 공동성명을 손에 쥡니다.' },
     mediate: { name: '분쟁 중재', blurb: '총을 쏘는 두 편 사이에 서서 없어서는 안 될 존재가 되려 합니다.' },
     condemn: { name: '공개 규탄', blurb: '할 말을 소리 내어 합니다. 값싸고 후련하지만 공짜는 아닙니다.' },

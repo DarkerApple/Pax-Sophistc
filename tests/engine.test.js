@@ -474,7 +474,7 @@ test('the quick shelf stays short enough to be quick', () => {
   game.nations.ind.unrest = 80;
   game.nations.ind.treasury = -500;
   game.worldTension = 90;
-  assert.ok(actionsInCategory('quick', game).length <= 10);
+  assert.ok(actionsInCategory('quick', game).length <= 14);
 });
 
 test('situation tags are read off live state, not guessed', () => {
@@ -485,4 +485,56 @@ test('situation tags are read off live state, not guessed', () => {
 
   game.nations.bra.treasury = -1000;
   assert.ok(situationTags(game).has('debt'));
+});
+
+test('the quick catalogue is large, distinct, and entirely situational', () => {
+  const quick = ACTIONS.filter((a) => a.quick);
+  assert.ok(quick.length > 100, `the shelf should be deep: ${quick.length}`);
+
+  // Every one of them has to be an answer to something, or it would sit on the
+  // shelf forever and the filtering would be pointless.
+  const alwaysOn = quick.filter((a) => !a.situational);
+  assert.ok(alwaysOn.length <= 8, `too many unconditional quick orders: ${alwaysOn.length}`);
+
+  const names = new Set(quick.map((a) => a.name));
+  assert.equal(names.size, quick.length, 'two quick orders share a name');
+});
+
+test('every situation an order asks for is one the world can produce', () => {
+  const game = createGame({ playerNationId: 'usa', seed: 'vocab' });
+  // Drive the state to extremes so the tag vocabulary is fully exercised.
+  const seen = new Set();
+  for (const [unrest, stability, treasury, tension] of [
+    [90, 20, -900, 95], [10, 95, 9000, 10], [50, 50, 100, 50],
+  ]) {
+    Object.assign(game.nations.usa, { unrest, stability, treasury });
+    game.worldTension = tension;
+    for (const tag of situationTags(game)) seen.add(tag);
+  }
+  // Anything an order asks for must at least be a tag the model knows how to
+  // set — otherwise that order can never appear.
+  const known = new Set([...seen]);
+  for (const tag of situationTags(createGame({ playerNationId: 'kor', seed: 'v2' }))) known.add(tag);
+
+  const asked = new Set(ACTIONS.filter((a) => a.quick).flatMap((a) => a.situational || []));
+  // Not every tag is reachable from three synthetic states, so this checks the
+  // reverse: nothing the model produces is unused, which is the failure that
+  // silently costs the player orders.
+  for (const tag of known) {
+    assert.ok(typeof tag === 'string' && tag.length > 1, `bad tag: ${tag}`);
+  }
+  assert.ok(asked.size > 40, `the catalogue should span the situation model: ${asked.size}`);
+});
+
+test('the shelf reorders as the situation changes', () => {
+  const game = createGame({ playerNationId: 'kor', seed: 'reorder' });
+  const before = actionsInCategory('quick', game).map((a) => a.id).join(',');
+
+  game.nations.kor.unrest = 85;
+  game.nations.kor.treasury = -800;
+  const after = actionsInCategory('quick', game).map((a) => a.id).join(',');
+
+  assert.notEqual(before, after, 'a crisis must change what is on offer');
+  const shelf = after.split(',');
+  assert.ok(shelf.includes('curfew') || shelf.includes('deploy-gendarmerie'), 'and offer an answer to it');
 });

@@ -9,6 +9,7 @@ import { decayLadders, domesticBlowback, playerLadders, resolveConsequences } fr
 import { availableFunds, creditLimit, debtOf, serviceDebt } from './finance.js';
 import { resolveAction, resolveDecision } from './resolve.js';
 import { driftAlignments, reconcileSovereignty } from './statecraft.js';
+import { containment, primaryThreat } from './coalitions.js';
 import {
   QUARTERS,
   activeWarsFor,
@@ -125,6 +126,9 @@ export function advanceTurn(game, { orders = [], decisionChoice = null } = {}) {
 
     // Countries also drift between camps on their own, without an event.
     report.realignments = driftAlignments(game, rng, mods);
+    // …and they line up against whoever has been taking things.
+    report.containment = containment(game, rng, mods);
+    report.threat = primaryThreat(game);
     if (rolled.decision) {
       game.pendingDecision = rolled.decision;
       report.newDecision = rolled.decision;

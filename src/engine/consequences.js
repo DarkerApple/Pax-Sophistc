@@ -131,6 +131,14 @@ export function ladderLevel(game, a, b) {
 
 /** Escalation cools off on its own, slowly, when nobody pokes it. */
 export function decayLadders(game) {
+  // Ladders with a state that has ceased to exist are cleared outright rather
+  // than left to tick down for four years.
+  for (const key of Object.keys(game.escalation || {})) {
+    const [a, b] = key.split('|');
+    if (game.nations[a]?.sovereign === false || game.nations[b]?.sovereign === false) {
+      delete game.escalation[key];
+    }
+  }
   if (!game.escalation) return;
   for (const key of Object.keys(game.escalation)) {
     const next = game.escalation[key] - 0.7;
@@ -384,7 +392,10 @@ export function playerLadders(game) {
     const [a, b] = key.split('|');
     if (a !== game.playerId && b !== game.playerId) continue;
     const other = a === game.playerId ? b : a;
-    if (!game.nations[other]) continue;
+    // A country that no longer runs its own affairs is not climbing a ladder
+    // with you. Winning a war used to leave the loser sitting in the escalation
+    // panel indefinitely.
+    if (!game.nations[other] || game.nations[other].sovereign === false) continue;
     out.push({ id: other, value, ...describeLadder(value) });
   }
   return out.sort((x, y) => y.value - x.value);

@@ -127,9 +127,9 @@ test('black-swan events only exist in chaos', () => {
 });
 
 test('a chaotic world produces more events than a calm one', () => {
-  const count = (mode) => {
+  const count = (mode, seed) => {
     let total = 0;
-    const game = createGame({ playerNationId: 'bra', difficulty: 5, seed: `freq-${mode}`, totalTurns: 30, mode });
+    const game = createGame({ playerNationId: 'bra', difficulty: 5, seed: `freq-${mode}-${seed}`, totalTurns: 30, mode });
     while (game.status === 'active') {
       const report = advanceTurn(game, {
         orders: [],
@@ -139,8 +139,12 @@ test('a chaotic world produces more events than a calm one', () => {
     }
     return total;
   };
-  const calm = count('calm');
-  const chaos = count('chaos');
+  // Averaged: one thirty-quarter run is a small sample, and a single unlucky
+  // seed should not be able to claim the world modes do not differ.
+  const seeds = ['a', 'b', 'c', 'd'];
+  const mean = (mode) => seeds.reduce((sum, s) => sum + count(mode, s), 0) / seeds.length;
+  const calm = mean('calm');
+  const chaos = mean('chaos');
   assert.ok(chaos > calm * 1.8, `chaos (${chaos}) should clearly out-event calm (${calm})`);
   assert.ok(calm > 0, 'a calm world is quiet, not silent');
 });

@@ -1255,3 +1255,22 @@ kbd {
   box-shadow: 0 -14px 20px -8px var(--bg);
 }
 .langswitch--sm .langswitch__btn { padding: 0.25rem 0.6rem; font-size: 0.78rem; }
+
+/* The moving front: ground that changed hands in the last two quarters. */
+.map-front { pointer-events: none; }
+.map-front__now {
+  fill: none;
+  stroke: var(--st-critical);
+  stroke-width: 1.6;
+  stroke-linejoin: round;
+  opacity: 0.95;
+  vector-effect: non-scaling-stroke;
+}
+.map-front__recent {
+  fill: none;
+  stroke: var(--st-serious);
+  stroke-width: 1;
+  opacity: 0.5;
+  vector-effect: non-scaling-stroke;
+}
+.action__tag--why { border-color: var(--accent); color: var(--accent); }

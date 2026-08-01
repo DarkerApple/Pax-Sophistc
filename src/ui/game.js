@@ -1,15 +1,25 @@
 // The command screen: dashboard, inspector, map, briefing feed, order planner.
 
 import { NATIONS_BY_ID } from '../data/nations.js';
-import { ACTIONS, CATEGORIES, actionAvailability, actionCost, actionsInCategory } from '../engine/actions.js';
+import {
+  ACTIONS,
+  CATEGORIES,
+  actionAvailability,
+  actionCost,
+  actionsInCategory,
+  reasonFor,
+  situationTags,
+} from '../engine/actions.js';
 import { successChance } from '../engine/resolve.js';
 import {
   activeWarsFor,
   dateLabel,
   defOf,
   getRelation,
+  isSovereign,
   livePower,
   rankedNations,
+  sovereignIds,
 } from '../engine/state.js';
 import {
   bandOf,
@@ -51,6 +61,34 @@ const STAT_LABELS = {
 };
 
 const statLabel = (key) => t(`stat.${key}`, STAT_LABELS[key]);
+
+/**
+ * What the "why is this here" chip on an order card says. Every situation the
+ * world can produce needs a phrase a player can read at a glance.
+ */
+const WHY_LABELS = {
+  unrest: 'unrest', boiling: 'the streets', riot: 'the riots', calm: 'the calm',
+  unpopular: 'your standing', popular: 'your standing', fragile: 'fragility',
+  solid: 'your position', debt: 'the debt', tight: 'the budget', rich: 'the surplus',
+  inflation: 'prices', stagnant: 'stagnation', growing: 'the boom',
+  tension: 'world tension', peaceful: 'the calm', isolated: 'isolation',
+  influential: 'your reach', sanctioned: 'the sanctions',
+  techLead: 'your lead', techLag: 'falling behind', hollowArmy: 'readiness',
+  strongArmy: 'your army', weakArmy: 'your army', nuclear: 'the arsenal',
+  energy: 'energy', maritime: 'the sea', agrarian: 'the harvest',
+  exporter: 'exports', resource: 'resources', aging: 'demographics', young: 'demographics',
+  war: 'the war', warWinning: 'winning', warLosing: 'losing', warExhausted: 'exhaustion',
+  warStalled: 'the stalemate', casualties: 'the casualties',
+  occupier: 'the occupation', occupied: 'occupied ground',
+  peace: 'peacetime', escalation: 'escalation', brink: 'the brink',
+  neighbourCrisis: 'next door', hostileNeighbour: 'the neighbour', warNextDoor: 'next door',
+  newState: 'the new state', conquest: 'the conquest', borderChange: 'the border',
+  nuclearUsed: 'the detonation', disaster: 'the disaster', famine: 'the harvest',
+  epidemic: 'the outbreak', accident: 'the accident', coup: 'the coup',
+  attack: 'the attack', financial: 'the markets', cyber: 'the intrusions',
+  commodityShock: 'prices', refugees: 'the refugees', breakthrough: 'the breakthrough',
+  feared: 'how you are seen', pariah: 'how you are seen',
+};
 
 export class GameScreen {
   constructor(root, app) {
@@ -392,6 +430,11 @@ export class GameScreen {
     const rank = rankedNations(game).findIndex((r) => r.state.id === id) + 1;
     const atWar = game.wars.some((w) => w.active && (w.attackers.includes(id) || w.defenders.includes(id)));
 
+    // A country that has been conquered still has a card, but it is a record of
+    // what happened to it — not a live sheet of statistics that would read as
+    // though it were still a going concern.
+    if (!isSovereign(game, id)) return this.#conqueredBody(id, def);
+
     return h('div',
       this.pinnedId === id ? h('div.inspector__pin', t('inspector.pinned', 'Pinned')) : null,
       h('div.inspector__head',
@@ -456,6 +499,42 @@ export class GameScreen {
     }
   }
 
+  /** What is left of a country somebody else now administers. */
+  #conqueredBody(id, def) {
+    const game = this.game;
+    const state = game.nations[id];
+    const holder = defOf(game, state.annexedBy);
+    const byYou = state.annexedBy === game.playerId;
+    return h('div',
+      h('div.inspector__head',
+        h('span.inspector__flag', def.flag),
+        h('div',
+          h('div.inspector__name', tNation(def)),
+          h('div.inspector__sub', t('inspector.formerState', 'Former state')),
+        ),
+      ),
+      h('div.inspector__relation', { style: { color: 'var(--muted)' } },
+        holder
+          ? (byYou
+              ? t('inspector.occupiedByYou', 'Occupied and administered by you.')
+              : t('inspector.occupiedBy', 'Occupied and administered by {nation}.', { nation: tNation(holder) }))
+          : t('inspector.dissolved', 'Dissolved. Nobody claims it.')),
+      h('p.inspector__brief',
+        t('inspector.conqueredNote',
+          'It no longer takes decisions, appears in the rankings, or answers anything you do. If somebody takes the ground back it will be here again.')),
+      h('div.inspector__actions',
+        h('button.btn.btn--sm.btn--ghost', {
+          onclick: () => { this.map?.centreOn(id, Math.max(3, this.map.zoom)); },
+        }, t('inspector.zoomTo', 'Zoom to')),
+        this.pinnedId === id
+          ? h('button.btn.btn--sm.btn--ghost', {
+              onclick: () => { this.pinnedId = null; this.map?.setSelected(null); this.render(); },
+            }, t('inspector.unpin', 'Unpin'))
+          : null,
+      ),
+    );
+  }
+
   /** The escalation ladders the player is currently standing on. */
   #escalation() {
     const ladders = playerLadders(this.game).filter((l) => l.value >= 1);
@@ -513,7 +592,7 @@ export class GameScreen {
 
   #relations() {
     const game = this.game;
-    const others = Object.keys(game.nations)
+    const others = sovereignIds(game)
       .filter((id) => id !== game.playerId)
       .map((id) => ({ id, rel: getRelation(game, game.playerId, id), power: livePower(game, id) }));
 
@@ -822,6 +901,7 @@ export class GameScreen {
 
   #actionCard(action, recommended) {
     const game = this.game;
+    const reason = reasonFor(action, situationTags(game));
     const state = game.nations[game.playerId];
     const mods = gameModifiers(game);
     const cost = actionCost(action, state);
@@ -855,6 +935,8 @@ export class GameScreen {
       h('div.action__meta',
         h('span', money(cost)),
         h('span', `${action.pc} PC`),
+        // Why this one is on the shelf at all — the situation it answers.
+        reason ? h('span.action__tag.action__tag--why', t(`why.${reason}`, WHY_LABELS[reason] || reason)) : null,
         cost > state.treasury && !blocked ? h('span.action__tag.action__tag--risk', t('orders.onCredit', 'on credit')) : null,
         recommended ? h('span.action__tag.action__tag--rec', t('orders.suggested', 'suggested')) : null,
         action.target === 'nation' ? h('span.action__tag', t('orders.needTarget', 'pick a target')) : null,
@@ -989,6 +1071,8 @@ export class GameScreen {
       h('div.action__meta',
         h('span', money(cost)),
         h('span', `${action.pc} PC`),
+        // Why this one is on the shelf at all — the situation it answers.
+        reason ? h('span.action__tag.action__tag--why', t(`why.${reason}`, WHY_LABELS[reason] || reason)) : null,
         h('span.action__tag', action.category),
         result.targetId ? h('span.action__tag', NATIONS_BY_ID[result.targetId].name) : null,
         action.risk === 'high' ? h('span.action__tag.action__tag--risk', 'can backfire') : null,

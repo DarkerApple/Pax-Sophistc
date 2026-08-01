@@ -247,7 +247,10 @@ export function baseOwners(scenarioId = DEFAULT_SCENARIO) {
 
 export function createTerritory() {
   // Only the deltas are stored; the baseline is recomputed from data.
-  return { overrides: {}, claims: {} };
+  // `revision` counts every change so the drawing caches can tell, exactly,
+  // whether anything moved — and `changed` remembers which turn each cell last
+  // changed hands, which is how the map shows the quarter's front.
+  return { overrides: {}, claims: {}, revision: 0, changed: {} };
 }
 
 function overridesOf(game) {
@@ -286,11 +289,16 @@ export function ownershipIndex(game) {
   return index;
 }
 
+/**
+ * Exact cache key. This used to be a digest of the override count plus the last
+ * few keys, which could stay identical across a quarter in which cells changed
+ * hands both ways — and the map would then draw last quarter's border. A
+ * counter cannot be wrong.
+ */
 function territoryStamp(game) {
-  const overrides = overridesOf(game);
-  const keys = Object.keys(overrides);
-  // Cheap identity: how many cells have moved, and the last few that did.
-  return `${keys.length}:${keys.slice(-4).map((k) => `${k}=${overrides[k]}`).join(',')}`;
+  if (!game.territory) game.territory = createTerritory();
+  if (typeof game.territory.revision !== 'number') game.territory.revision = 0;
+  return game.territory.revision;
 }
 
 /** Land-cell slots a country holds right now. */
@@ -364,14 +372,49 @@ function slotLookup() {
 
 /** Hand specific cells to a new owner (null = leave them unclaimed). */
 export function setOwner(game, slots, ownerId) {
+  if (!slots.length) return 0;
   const overrides = overridesOf(game);
   const base = baseOwners(game?.scenario);
+  const changed = game.territory.changed || (game.territory.changed = {});
+
   for (const slot of slots) {
     if (base[slot] === ownerId) delete overrides[slot];
     else overrides[slot] = ownerId === null ? '' : ownerId;
+    // Which quarter this ground last moved, so the map can show the front.
+    changed[slot] = game.turn;
   }
+
+  // Forget anything that has been quiet for a year; the highlight is about
+  // what is happening now, and the save should not grow without bound.
+  for (const [slot, turn] of Object.entries(changed)) {
+    if (game.turn - turn > 4) delete changed[slot];
+  }
+
+  game.territory.revision = (game.territory.revision || 0) + 1;
   ownedCache.delete(game);
   return slots.length;
+}
+
+/**
+ * Cells that changed hands in the last `within` quarters, as [lon, lat] boxes
+ * ready to draw. This is the moving front.
+ * @returns {Array<{west: number, south: number, east: number, north: number, turn: number}>}
+ */
+export function recentChanges(game, within = 1) {
+  const changed = game?.territory?.changed;
+  if (!changed) return [];
+  const cells = landCells();
+  const out = [];
+  for (const [slotKey, turn] of Object.entries(changed)) {
+    if (game.turn - turn > within) continue;
+    const index = cells[Number(slotKey)];
+    if (index === undefined) continue;
+    const [col, row] = cellColRow(index);
+    const west = GRID.lonMin + col * GRID.step;
+    const north = GRID.latMax - row * GRID.step;
+    out.push({ west, east: west + GRID.step, north, south: north - GRID.step, turn });
+  }
+  return out;
 }
 
 /**
