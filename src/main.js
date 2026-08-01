@@ -5,15 +5,18 @@ import { PROVIDERS, PROVIDERS_BY_ID } from './ai/providers.js';
 import { AiClient } from './ai/client.js';
 import { createGame } from './engine/state.js';
 import { advanceTurn } from './engine/turn.js';
+import { CATEGORIES } from './engine/actions.js';
 import { h, mount } from './ui/dom.js';
 import { GameScreen } from './ui/game.js';
 import { SetupScreen } from './ui/setup.js';
+import { THEMES, UI_SCALES, applyTheme, applyUiScale } from './ui/theme.js';
 import {
   clearSave,
   exportGame,
   importGame,
   loadAiConfig,
   loadGame,
+  loadPrefs,
   saveAiConfig,
   saveGame,
   savePrefs,
@@ -31,10 +34,12 @@ class App {
   }
 
   start() {
+    const prefs = loadPrefs();
+    applyTheme(prefs.theme);
+    applyUiScale(prefs.uiScale);
     this.showSetup();
   }
 
-  /** Switching screens should not inherit the previous screen's scroll offset. */
   #scrollToTop() {
     window.scrollTo(0, 0);
   }
@@ -50,16 +55,26 @@ class App {
     this.#renderOverlays();
   }
 
-  async newGame({ playerNationId, difficulty, totalTurns, seed, ai }) {
+  async newGame({ playerNationId, difficulty, totalTurns, mode, seed, ai }) {
     saveAiConfig(ai);
-    savePrefs({ lastNation: playerNationId, lastDifficulty: difficulty, lastLength: totalTurns });
+    savePrefs({
+      lastNation: playerNationId,
+      lastDifficulty: difficulty,
+      lastLength: totalTurns,
+      lastWorldMode: mode,
+    });
     this.narrator.update(ai);
 
-    this.game = createGame({ playerNationId, difficulty, totalTurns, seed });
+    this.game = createGame({ playerNationId, difficulty, totalTurns, seed, mode });
     this.briefing = null;
 
     this.screen = new GameScreen(this.root, this);
     this.screen.busy = true;
+    // First-time players get the rules opened for them, once.
+    if (!loadPrefs().seenHelp) {
+      this.screen.helpOpen = true;
+      savePrefs({ seenHelp: true });
+    }
     this.screen.render();
     this.#scrollToTop();
 
@@ -86,7 +101,6 @@ class App {
   }
 
   async #refreshBriefingFromSave() {
-    // A restored run has no live briefing; regenerate an orientation note.
     this.screen.busy = true;
     this.screen.render();
     this.briefing = await this.narrator.opening(this.game);
@@ -202,13 +216,10 @@ class App {
 
   #settingsModal() {
     const config = { ...loadAiConfig() };
-    const provider = PROVIDERS_BY_ID[config.providerId] || PROVIDERS[0];
+    let prefs = loadPrefs();
     let status = null;
 
-    const rerender = () => {
-      this.settingsDraft = config;
-      mount(document.getElementById('overlay'), body());
-    };
+    const rerender = () => mount(document.getElementById('overlay'), body());
 
     const body = () =>
       h('div.modal', {
@@ -217,13 +228,52 @@ class App {
         h('div.modal__panel',
           h('button.modal__close', { onclick: () => this.closeSettings(), 'aria-label': 'Close' }, '✕'),
           h('h2.modal__title', 'Settings'),
+
+          h('h3.subhead', 'Appearance'),
+          h('div.theme-grid',
+            THEMES.map((theme) =>
+              h('button.theme-card', {
+                class: prefs.theme === theme.id ? 'theme-card is-active' : 'theme-card',
+                title: theme.blurb,
+                onclick: () => {
+                  applyTheme(theme.id);
+                  savePrefs({ theme: theme.id });
+                  prefs = loadPrefs();
+                  rerender();
+                },
+              },
+                h('div.theme-card__swatches',
+                  theme.swatch.map((colour) => h('span.theme-card__swatch', { style: { background: colour } }))),
+                h('div.theme-card__name', theme.name),
+              ),
+            ),
+          ),
+          h('label.field', { style: { marginTop: '0.75rem' } },
+            h('span.field__label', 'Text size'),
+            h('div.chips',
+              UI_SCALES.map((scale) =>
+                h('button.chip', {
+                  class: prefs.uiScale === scale.id ? 'chip is-active' : 'chip',
+                  onclick: () => {
+                    applyUiScale(scale.id);
+                    savePrefs({ uiScale: scale.id });
+                    prefs = loadPrefs();
+                    rerender();
+                  },
+                }, scale.name),
+              ),
+            ),
+          ),
+
+          h('hr.rule'),
+          h('h3.subhead', 'AI narrator'),
           h('p.panel__note',
             'Your API key is stored in this browser only and is sent directly to the provider you choose. ',
             'The game is fully playable with no provider at all.',
           ),
 
           h('label.field',
-            h('span.field__label', 'AI provider'),
+            h('span.field__label', 'Provider'),
             h('select.input', {
               onchange: (e) => {
                 config.providerId = e.target.value;
@@ -234,41 +284,39 @@ class App {
             },
               PROVIDERS.map((p) => h('option', { value: p.id, selected: p.id === config.providerId }, p.label)),
             ),
-            h('span.field__hint', provider.blurb),
+            h('span.field__hint', (PROVIDERS_BY_ID[config.providerId] || PROVIDERS[0]).blurb),
           ),
 
-          provider.kind === 'none' ? null : h('label.field',
+          (PROVIDERS_BY_ID[config.providerId] || PROVIDERS[0]).kind === 'none' ? null : h('label.field',
             h('span.field__label', 'API key'),
             h('input.input', {
-              type: 'password',
-              value: config.apiKey,
-              autocomplete: 'off',
+              type: 'password', value: config.apiKey, autocomplete: 'off',
               oninput: (e) => { config.apiKey = e.target.value.trim(); },
             }),
-            provider.signupUrl
+            (PROVIDERS_BY_ID[config.providerId] || PROVIDERS[0]).signupUrl
               ? h('span.field__hint', 'Free key: ',
-                  h('a', { href: provider.signupUrl, target: '_blank', rel: 'noreferrer noopener' },
-                    provider.signupUrl.replace(/^https?:\/\//, '')))
+                  h('a', {
+                    href: (PROVIDERS_BY_ID[config.providerId] || PROVIDERS[0]).signupUrl,
+                    target: '_blank', rel: 'noreferrer noopener',
+                  }, (PROVIDERS_BY_ID[config.providerId] || PROVIDERS[0]).signupUrl.replace(/^https?:\/\//, '')))
               : null,
           ),
 
-          provider.kind === 'none' ? null : h('label.field',
+          (PROVIDERS_BY_ID[config.providerId] || PROVIDERS[0]).kind === 'none' ? null : h('label.field',
             h('span.field__label', 'Model'),
             h('input.input', {
-              type: 'text',
-              list: 'settings-models',
-              value: config.model,
+              type: 'text', list: 'settings-models', value: config.model,
               oninput: (e) => { config.model = e.target.value.trim(); },
             }),
-            h('datalist', { id: 'settings-models' }, provider.models.map((m) => h('option', { value: m }))),
+            h('datalist', { id: 'settings-models' },
+              (PROVIDERS_BY_ID[config.providerId] || PROVIDERS[0]).models.map((m) => h('option', { value: m }))),
           ),
 
-          provider.id === 'custom'
+          config.providerId === 'custom'
             ? h('label.field',
                 h('span.field__label', 'Endpoint URL'),
                 h('input.input', {
-                  type: 'url',
-                  value: config.endpoint,
+                  type: 'url', value: config.endpoint,
                   oninput: (e) => { config.endpoint = e.target.value.trim(); },
                 }),
               )
@@ -324,17 +372,52 @@ class App {
 const app = new App(document.getElementById('app'));
 app.start();
 
-// Keyboard: Escape closes whatever is on top.
+// ── Keyboard ────────────────────────────────────────────────────────────────
+
+function typingInAField(target) {
+  return target && ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName);
+}
+
 document.addEventListener('keydown', (e) => {
-  if (e.key !== 'Escape') return;
-  if (app.settingsOpen) {
-    app.closeSettings();
-  } else if (app.screen?.detailNationId) {
-    app.screen.detailNationId = null;
-    app.screen.render();
-  } else if (app.screen?.pendingTargetAction) {
-    app.screen.pendingTargetAction = null;
-    app.screen.render();
+  const screen = app.screen;
+
+  if (e.key === 'Escape') {
+    if (app.settingsOpen) app.closeSettings();
+    else if (screen?.helpOpen) { screen.helpOpen = false; screen.render(); }
+    else if (screen?.detailNationId) { screen.detailNationId = null; screen.render(); }
+    else if (screen?.pendingTargetAction) { screen.pendingTargetAction = null; screen.render(); }
+    return;
+  }
+
+  if (typingInAField(e.target)) return;
+  if (!(screen instanceof GameScreen) || !app.game) return;
+
+  if (e.key === '?') {
+    screen.helpOpen = true;
+    screen.render();
+    e.preventDefault();
+    return;
+  }
+
+  if (e.key === 'Enter' && app.game.status === 'active' && !screen.busy && !app.settingsOpen && !screen.helpOpen) {
+    if (app.game.pendingDecision && !screen.decisionChoice) return;
+    app.endTurn(screen.orders, screen.decisionChoice);
+    e.preventDefault();
+    return;
+  }
+
+  const categoryIndex = Number(e.key) - 1;
+  if (Number.isInteger(categoryIndex) && categoryIndex >= 0 && categoryIndex < CATEGORIES.length) {
+    screen.category = CATEGORIES[categoryIndex].id;
+    screen.render();
+    e.preventDefault();
+    return;
+  }
+
+  if (screen.map) {
+    if (e.key === '+' || e.key === '=') { screen.map.zoomBy(1.3); e.preventDefault(); }
+    else if (e.key === '-' || e.key === '_') { screen.map.zoomBy(1 / 1.3); e.preventDefault(); }
+    else if (e.key === '0') { screen.map.resetCamera(); e.preventDefault(); }
   }
 });
 

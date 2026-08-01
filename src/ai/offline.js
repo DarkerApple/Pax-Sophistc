@@ -3,7 +3,7 @@
 // serviceable, if less varied, briefing from it.
 
 import { NATIONS_BY_ID } from '../data/nations.js';
-import { difficultyModifiers } from '../engine/difficulty.js';
+import { gameModifiers } from '../engine/worldmodes.js';
 import { dateLabel } from '../engine/state.js';
 
 const OUTLETS = [
@@ -136,7 +136,7 @@ function buildHeadline(game, report) {
 
 function buildAdvice(game, report) {
   const state = game.nations[game.playerId];
-  const mods = difficultyModifiers(game.difficulty);
+  const mods = gameModifiers(game);
 
   if (state.treasury < 0) return 'We are spending money we do not have. Consolidate, or the markets will do it for us.';
   if (state.unrest > 65) return 'The streets are the problem now, not the neighbours. Fix that first.';
@@ -153,7 +153,7 @@ function buildAdvice(game, report) {
 export function offlineOpening(game) {
   const player = NATIONS_BY_ID[game.playerId];
   const state = game.nations[game.playerId];
-  const mods = difficultyModifiers(game.difficulty);
+  const mods = gameModifiers(game);
   const rivals = Object.keys(game.nations)
     .filter((id) => id !== game.playerId)
     .map((id) => ({ id, rel: game.relations[[game.playerId, id].sort().join('|')] ?? 0 }))

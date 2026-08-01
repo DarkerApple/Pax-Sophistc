@@ -2,7 +2,7 @@
 // mechanical turn report, so it can only describe what actually happened.
 
 import { NATIONS_BY_ID } from '../data/nations.js';
-import { difficultyModifiers } from '../engine/difficulty.js';
+import { gameModifiers } from '../engine/worldmodes.js';
 import { nationDigest, worldDigest } from '../engine/turn.js';
 
 const HOUSE_STYLE = `You are the narrator of a serious geopolitical strategy game set in the present day.
@@ -32,7 +32,7 @@ Return ONLY a JSON object with this shape:
 }
 
 export function buildNarratorPrompt(game, report) {
-  const mods = difficultyModifiers(game.difficulty);
+  const mods = gameModifiers(game);
   const player = NATIONS_BY_ID[game.playerId];
   const world = worldDigest(game, 10);
 
@@ -182,7 +182,7 @@ Write the opening situation report for a new game. Return ONLY JSON:
 
 export function buildOpeningPrompt(game) {
   const player = NATIONS_BY_ID[game.playerId];
-  const mods = difficultyModifiers(game.difficulty);
+  const mods = gameModifiers(game);
   const world = worldDigest(game, 10);
   return [
     `PLAYER TAKES OFFICE AS ${player.leaderTitle.toUpperCase()} OF ${player.name.toUpperCase()}.`,

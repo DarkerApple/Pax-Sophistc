@@ -118,7 +118,9 @@ function considerWar(game, rng, mods, actorId) {
       near: proximity(def, NATIONS_BY_ID[id]),
       ratio: combatPower(game, actorId) / Math.max(1, combatPower(game, id)),
     }))
-    .filter((t) => t.relation < -55 && t.near > 0.35 && t.ratio > 1.15);
+    .filter((t) => t.relation < -55 && t.near > 0.35 && t.ratio > 1.15)
+    // In a Stable World nobody springs a war on the player out of nowhere.
+    .filter((t) => !(mods.shieldPlayer && t.id === game.playerId));
 
   if (!targets.length) return null;
 

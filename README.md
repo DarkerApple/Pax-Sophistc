@@ -1,8 +1,8 @@
 # Pax Sophistc
 
 An AI-narrated geopolitical strategy game set in the world as it is now. Pick any of
-**56 real countries**, set a **difficulty from 1 to 10**, and run its foreign, economic and
-domestic policy quarter by quarter from Q1 2026 onward.
+**56 real countries**, choose the **world you want to play in**, set a **difficulty from 1 to
+10**, and run its foreign, economic and domestic policy quarter by quarter from Q1 2026 onward.
 
 It runs entirely in your browser. No build step, no server, no account. A language model
 writes the briefings and judges your freeform orders — and every provider it supports has a
@@ -10,7 +10,7 @@ writes the briefings and judges your freeform orders — and every provider it s
 
 ```bash
 npm start          # http://localhost:5173
-npm test           # 45 engine + AI-boundary tests, no dependencies
+npm test           # 68 engine, AI-boundary, world-mode and map tests
 ```
 
 There is nothing to install. `npm start` runs a ~60-line static file server from
@@ -45,7 +45,31 @@ events at you, wars grind forward, and the books get balanced.
 At the end of your term you are graded across five components against the mandate you were
 given on day one.
 
-## Current World mode
+## World modes
+
+The world mode sets the *character* of the world; the difficulty slider sets how hard it
+pushes back. They compose — Chaotic at difficulty 2 is a wild but survivable ride, Chaotic
+at 10 is a shredder.
+
+| | 🕊 Stable World | 🌍 Current World | 🎲 Chaotic World |
+|---|---|---|---|
+| Crisis frequency | ×0.55 | ×1 | ×2.3 |
+| Crisis severity | ×0.7 | ×1 | ×1.55 |
+| War risk | ×0.35 | ×1 | ×2.4 |
+| Relation swings | ×0.6 | ×1 | ×3.4 |
+| Starting alliances | real | real | **scrambled** |
+| Black-swan events | — | — | **yes** |
+| Surprise wars on you | never | possible | frequent |
+
+**Stable World** is the one to learn on: institutions hold, nobody declares war on you out of
+nowhere, and money is easier to find.
+
+**Chaotic World** shakes the alignment map at the start — old friends are not reliably
+friends — then keeps it moving. It adds a pool of black-swan events that exist nowhere else:
+alignment reversals, market dislocations, technological discontinuities, outright state
+failure, improbable windfalls. Same rules, no stability.
+
+## Current World
 
 The starting position is the real one, as of the beginning of 2026: GDP, population,
 military weight, technology, stability, nuclear arsenals, bloc membership, and a relations
@@ -55,7 +79,8 @@ already decided — Russia/Ukraine at −96, India/Pakistan at −74, Israel/Ira
 Figures are approximate and tuned for playability, not for citation. They are game
 parameters, not a data source.
 
-Every country is playable. Some are much harder than others, and that is the point:
+Every country is playable, and each card tells you up front whether it is a *gentle start*,
+*moderate*, or a *hard start*. Some are much harder than others, and that is the point:
 Switzerland at difficulty 10 is a gentler run than Ukraine at difficulty 5.
 
 ## The difficulty slider
@@ -75,6 +100,63 @@ One value, 1–10, retunes the whole simulation rather than scaling a single num
 
 It also decides how much a good run is worth: the final score is multiplied by ×0.85 at
 Détente and ×1.15 at Doomsday.
+
+## The map
+
+A schematic world map — coarse continent silhouettes with every country plotted at its true
+latitude and longitude, sized by live national power.
+
+- **Zoom and pan.** Scroll or pinch to zoom, drag to pan, `+` / `−` / `0` on the keyboard, or
+  jump straight to Europe, East Asia, the Middle East, the Americas or Africa. Marks keep a
+  constant on-screen size as you zoom, so zooming genuinely separates crowded regions rather
+  than magnifying a blob — and every country gets a name label once you are close enough to
+  read it.
+- **Five view modes**, each with its own legend: Relations, Power, Stability, Alignment and
+  Conflict.
+- **Hover goes to the sidebar, not over the map.** Pointing at a country fills the *Country
+  inspector* panel on the left; clicking pins it there, clicking again opens its full file.
+  Nothing ever draws on top of the map.
+
+Colour follows one rule per mode: relations are **diverging** (blue ↔ neutral grey ↔ red),
+power and stability are **sequential** (one hue, five steps), alignment is **categorical**
+(three validated slots plus non-aligned), and conflict uses the **reserved status scale**
+paired with a ring so "at war" is never carried by colour alone. Both the light and dark data
+palettes are validated for colour-vision deficiency and surface contrast rather than
+eyeballed.
+
+The map is scenery, not cartography: bays, straits and small islands are absent, and no line
+on it should be read as a claim about a real border.
+
+## Themes and readability
+
+Five themes, switchable in Setup or Settings and remembered between runs:
+
+| Theme | |
+|---|---|
+| **Situation Room** | Deep navy command console. The default. |
+| **Graphite** | Neutral dark grey, less blue light. |
+| **Daylight** | Light paper theme for bright rooms and projectors. |
+| **High Contrast** | Pure black, maximum contrast, heavier outlines. |
+| **Amber Terminal** | Monochrome CRT with amber phosphor. |
+
+Text size has four settings (compact through extra-large) which scale the entire interface,
+not just the body copy.
+
+## Learning the game
+
+- A **How it works** panel on the setup screen explains the loop before you commit to anything.
+- The **How to play** dialog opens automatically on your first run and is available from the
+  top bar or by pressing `?` at any time.
+- Every order card shows **what it actually does** in plain language — `Approval +4`,
+  `Growth +0.35/q for 4q`, `Their relations +14` — alongside its cost and success chance.
+- Orders that address a problem you currently have are marked **suggested**; ones that can end
+  up worse than doing nothing are marked **can backfire**. Blocked orders say exactly what
+  they are short of.
+- The bottom bar tells you when you are about to end a quarter with money and political
+  capital still unspent, which is the commonest beginner mistake.
+
+**Keyboard:** `Enter` ends the quarter · `1`–`6` switch order category · `+` `−` `0` zoom the
+map · `?` opens help · `Esc` closes whatever is open.
 
 ## Free AI providers
 
@@ -144,13 +226,16 @@ can reload later or on another machine.
 
 ```
 index.html            shell
-styles/main.css       one stylesheet
+styles/main.css       one stylesheet: theme tokens, then components
 scripts/serve.js      dev server, zero dependencies
 src/
-  data/nations.js     the world: 56 countries, blocs, doctrines, relation anchors
+  data/
+    nations.js        the world: 56 countries, blocs, doctrines, relation anchors
+    geography.js      hand-digitised continent outlines for the map
   engine/
     rng.js            seeded, serialisable RNG
     difficulty.js     the slider → every knob in the simulation
+    worldmodes.js     Stable / Current / Chaotic, composed with difficulty
     state.js          game construction, relations, serialisation
     actions.js        the 34-order catalogue
     effects.js        the shared "something happened to a country" vocabulary
@@ -166,7 +251,12 @@ src/
     schema.js         the clamp layer between the model and the rules
     narrator.js       AI-first with automatic local fallback
     offline.js        the local briefing generator
-  ui/                 dom helpers, setup screen, map, game screen, persistence
+  ui/
+    theme.js          the theme + text-size registry
+    map.js            projection, zoom/pan camera, view modes, legends
+    setup.js          new-game screen
+    game.js           command screen: dashboard, inspector, feed, planner
+    dom.js, store.js  helpers and persistence
 tests/                engine + AI-boundary tests
 ```
 

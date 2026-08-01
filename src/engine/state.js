@@ -3,7 +3,8 @@
 
 import { NATIONS, NATIONS_BY_ID, RELATION_ANCHORS, powerRank } from '../data/nations.js';
 import { Rng, hashSeed } from './rng.js';
-import { clampDifficulty, difficultyModifiers } from './difficulty.js';
+import { clampDifficulty } from './difficulty.js';
+import { worldMode } from './worldmodes.js';
 
 export const SAVE_VERSION = 1;
 export const QUARTERS = ['Q1', 'Q2', 'Q3', 'Q4'];
@@ -60,7 +61,7 @@ function sharedBlocs(a, b) {
  * Seed the relation matrix: bloc membership and geography set the baseline,
  * then the historical anchors overwrite the pairs the real world has settled.
  */
-function buildRelations() {
+function buildRelations(rng, scramble = 0) {
   const relations = {};
   for (let i = 0; i < NATIONS.length; i++) {
     for (let j = i + 1; j < NATIONS.length; j++) {
@@ -79,6 +80,15 @@ function buildRelations() {
   for (const [a, b, value] of RELATION_ANCHORS) {
     if (NATIONS_BY_ID[a] && NATIONS_BY_ID[b]) {
       relations[relationKey(a, b)] = clamp(value, -100, 100);
+    }
+  }
+
+  // Chaotic worlds start with the alignment map shaken: old friends are not
+  // reliably friends, and old enemies are not reliably enemies.
+  if (scramble > 0 && rng) {
+    for (const key of Object.keys(relations)) {
+      const jolt = rng.normal(0, 70 * scramble);
+      relations[key] = clamp(Math.round(relations[key] * (1 - scramble * 0.55) + jolt), -100, 100);
     }
   }
   return relations;
@@ -159,12 +169,19 @@ function buildObjectives(def) {
   return objectives;
 }
 
+function startingPoliticalCapital(difficulty) {
+  // Kept local so state.js does not have to import the whole modifier stack.
+  const t = (clampDifficulty(difficulty) - 1) / 9;
+  return Math.round(2 - 4 * t);
+}
+
 export function createGame({
   playerNationId = 'usa',
   difficulty = 5,
   seed = null,
   totalTurns = 40,
   scenario = 'current-world',
+  mode = 'current',
 } = {}) {
   if (!NATIONS_BY_ID[playerNationId]) {
     throw new Error(`Unknown nation: ${playerNationId}`);
@@ -176,9 +193,12 @@ export function createGame({
   const nations = {};
   for (const nation of NATIONS) nations[nation.id] = initialNationState(nation);
 
+  const knobs = worldMode(mode).knobs;
+
   const game = {
     version: SAVE_VERSION,
     scenario,
+    worldMode: worldMode(mode).id,
     seed: resolvedSeed,
     rngState: rng.state,
     createdAt: new Date().toISOString(),
@@ -188,17 +208,17 @@ export function createGame({
     totalTurns,
     year: START_YEAR,
     quarter: 0,
-    worldTension: 42,
+    worldTension: clamp(42 + knobs.tensionOffset, 0, 100),
     globalGrowth: 1,
     nations,
-    relations: buildRelations(),
+    relations: buildRelations(rng, knobs.scrambleRelations),
     wars: [],
     treaties: [],
     log: [],
     headlines: [],
     turnReports: [],
     objectives: buildObjectives(def),
-    politicalCapital: 6 + difficultyModifiers(difficulty).politicalCapitalBonus,
+    politicalCapital: 6 + startingPoliticalCapital(difficulty),
     status: 'active', // active | victory | defeat | collapsed
     ending: null,
     startSnapshot: {

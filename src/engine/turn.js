@@ -1,7 +1,7 @@
 // The quarter. Orders resolve, the world answers, the books get balanced.
 
 import { NATIONS_BY_ID } from '../data/nations.js';
-import { difficultyModifiers } from './difficulty.js';
+import { gameModifiers } from './worldmodes.js';
 import { applyGlobalEvent, rollEvents } from './events.js';
 import { applyEffect } from './effects.js';
 import { runOpponents } from './opponents.js';
@@ -34,7 +34,7 @@ export function advanceTurn(game, { orders = [], decisionChoice = null } = {}) {
   if (game.status !== 'active') {
     throw new Error('This game has already ended.');
   }
-  const mods = difficultyModifiers(game.difficulty);
+  const mods = gameModifiers(game);
 
   return withRng(game, (rng) => {
     game.turn += 1;
@@ -101,7 +101,7 @@ export function advanceTurn(game, { orders = [], decisionChoice = null } = {}) {
     // 6. Books, modifiers, drift.
     report.economy = economyTick(game, rng, mods);
     relationDrift(game, rng, mods);
-    tensionDrift(game, rng);
+    tensionDrift(game, rng, mods);
 
     // 7. Political capital for next quarter.
     const player = game.nations[game.playerId];
@@ -261,17 +261,17 @@ function relationDrift(game, rng, mods) {
     const current = getRelation(game, a, b);
     // Relations decay toward neutral, faster when the world is tense.
     const pull = -current * 0.012 * (a === game.playerId || b === game.playerId ? mods.diplomaticFriction : 1);
-    adjustRelation(game, a, b, pull + rng.normal(0, 0.8));
+    adjustRelation(game, a, b, pull + rng.normal(0, 0.8 * (mods.relationVolatility ?? 1)));
   }
 }
 
-function tensionDrift(game, rng) {
+function tensionDrift(game, rng, mods) {
   const activeWars = game.wars.filter((w) => w.active).length;
   const nuclearShadow = game.stats.nukesUsed > 0 ? 15 : 0;
   // Tension mean-reverts toward what the world's actual conflicts justify.
   // Without this, sixty countries running exercises every quarter would peg it
   // at 100 permanently and it would stop carrying information.
-  const equilibrium = 34 + activeWars * 13 + nuclearShadow;
+  const equilibrium = clamp(34 + activeWars * 13 + nuclearShadow + (mods.tensionOffset || 0), 0, 100);
   game.worldTension = clamp(
     game.worldTension + (equilibrium - game.worldTension) * 0.17 + rng.normal(0, 1.2),
     0,
@@ -308,7 +308,7 @@ function checkEndgame(game, mods) {
 }
 
 /** Grade the run against the objectives set at the start. */
-export function scoreRun(game, mods = difficultyModifiers(game.difficulty), { collapsed = false } = {}) {
+export function scoreRun(game, mods = gameModifiers(game), { collapsed = false } = {}) {
   const player = game.nations[game.playerId];
   const start = game.startSnapshot;
 

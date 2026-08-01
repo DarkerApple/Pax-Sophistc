@@ -73,16 +73,6 @@ export function money(billions) {
   return `${value < 0 ? '−' : ''}$${abs.toFixed(1)}B`;
 }
 
-export function signed(value, digits = 0) {
-  const n = Number(value) || 0;
-  return `${n >= 0 ? '+' : '−'}${Math.abs(n).toFixed(digits)}`;
-}
-
-export function pct(value, digits = 1) {
-  const n = Number(value) || 0;
-  return `${n >= 0 ? '+' : '−'}${Math.abs(n).toFixed(digits)}%`;
-}
-
 /** Colour ramp for a 0-100 stat where high is good. */
 export function statColour(value, invert = false) {
   const v = invert ? 100 - value : value;

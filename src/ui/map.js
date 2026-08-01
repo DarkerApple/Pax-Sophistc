@@ -1,20 +1,55 @@
-// The situation map. An equirectangular plot of every country in the game,
-// sized by live power and coloured by how they feel about you.
+// The situation map: a coarse world silhouette with every country plotted at
+// its true position, zoomable, and recolourable by what you want to read.
+//
+// Colour encodings follow one rule each:
+//   relations  diverging  — blue (allied) ↔ grey midpoint ↔ red (hostile)
+//   power      sequential — one hue, five steps, low→high
+//   stability  sequential — same ramp
+//   blocs      categorical — three validated slots plus a neutral "non-aligned"
+//   conflict   status      — reserved status colours, always paired with a ring
+//
+// Hover never draws over the map; it reports to the inspector panel instead.
 
-import { NATIONS_BY_ID, REGIONS } from '../data/nations.js';
+import { LANDMASSES, OCEANS } from '../data/geography.js';
+import { NATIONS_BY_ID } from '../data/nations.js';
 import { getRelation, livePower } from '../engine/state.js';
-import { relationColour, relationLabel } from './dom.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const W = 1000;
-const H = 500;
-const LAT_TOP = 78;
-const LAT_BOTTOM = -56;
+const H = 395; // 1000 * (LAT_TOP - LAT_BOTTOM) / 360 — true equirectangular
+const LAT_TOP = 84;
+const LAT_BOTTOM = -58;
+const MIN_ZOOM = 1;
+const MAX_ZOOM = 8;
 
-function project(lat, lon) {
+export const VIEW_MODES = [
+  { id: 'relations', name: 'Relations', hint: 'How each country feels about you.' },
+  { id: 'power', name: 'Power', hint: 'Overall national power, low to high.' },
+  { id: 'stability', name: 'Stability', hint: 'Institutional resilience, low to high.' },
+  { id: 'blocs', name: 'Alignment', hint: 'Which way each country leans.' },
+  { id: 'conflict', name: 'Conflict', hint: 'Who is fighting, and who is close to it.' },
+];
+
+/** Regions you can jump the camera to. */
+export const MAP_FOCUSES = [
+  { id: 'world', name: 'World', lat: 20, lon: 10, zoom: 1 },
+  { id: 'europe', name: 'Europe', lat: 52, lon: 15, zoom: 4.2 },
+  { id: 'asia', name: 'East Asia', lat: 30, lon: 120, zoom: 3.4 },
+  { id: 'middle-east', name: 'Middle East', lat: 28, lon: 45, zoom: 3.6 },
+  { id: 'americas', name: 'Americas', lat: 10, lon: -80, zoom: 2.2 },
+  { id: 'africa', name: 'Africa', lat: 2, lon: 20, zoom: 2.6 },
+];
+
+const ALIGNMENTS = [
+  { id: 'west', name: 'Western-aligned', blocs: ['nato', 'eu', 'usAllied'], slot: 1 },
+  { id: 'east', name: 'Eastern-aligned', blocs: ['brics', 'sco', 'csto'], slot: 2 },
+  { id: 'regional', name: 'Regional bloc', blocs: ['gcc', 'asean', 'au'], slot: 3 },
+];
+
+export function project(lat, lon) {
   const x = ((lon + 180) / 360) * W;
   const y = ((LAT_TOP - lat) / (LAT_TOP - LAT_BOTTOM)) * H;
-  return [x, Math.max(6, Math.min(H - 6, y))];
+  return [x, y];
 }
 
 function svg(tag, attrs = {}) {
@@ -25,86 +60,146 @@ function svg(tag, attrs = {}) {
   return el;
 }
 
+function ringToPath(ring) {
+  return `${ring
+    .map(([lon, lat], i) => {
+      const [x, y] = project(lat, lon);
+      return `${i === 0 ? 'M' : 'L'}${x.toFixed(1)},${y.toFixed(1)}`;
+    })
+    .join('')}Z`;
+}
+
+/** Which of the three alignment slots (or none) a country sits in. */
+export function alignmentOf(nationId) {
+  const def = NATIONS_BY_ID[nationId];
+  const blocs = def?.blocs || [];
+  for (const alignment of ALIGNMENTS) {
+    if (alignment.blocs.some((b) => blocs.includes(b))) return alignment;
+  }
+  return null;
+}
+
 export class WorldMap {
   /**
    * @param {HTMLElement} container
-   * @param {{onSelect?: (id: string) => void}} handlers
+   * @param {{onSelect?: Function, onHover?: Function, onViewChange?: Function}} handlers
    */
-  constructor(container, { onSelect } = {}) {
+  constructor(container, { onSelect, onHover, onViewChange } = {}) {
     this.container = container;
     this.onSelect = onSelect;
+    this.onHover = onHover;
+    this.onViewChange = onViewChange;
     this.selectedId = null;
+    this.mode = 'relations';
+    this.camera = { zoom: 1, x: 0, y: 0 };
+    this.game = null;
+    this.nodeEls = new Map();
+
     this.root = svg('svg', {
       viewBox: `0 0 ${W} ${H}`,
       class: 'worldmap',
       preserveAspectRatio: 'xMidYMid meet',
-      role: 'img',
+      role: 'application',
       'aria-label': 'World situation map',
     });
-    this.tooltip = document.createElement('div');
-    this.tooltip.className = 'map-tooltip';
-    this.tooltip.hidden = true;
-    container.append(this.root, this.tooltip);
+    container.append(this.root);
+    this.#bindCamera();
+  }
+
+  setMode(mode) {
+    this.mode = mode;
+    if (this.game) this.render(this.game);
   }
 
   setSelected(id) {
     this.selectedId = id;
-    this.#applySelection();
-  }
-
-  #applySelection() {
-    for (const node of this.root.querySelectorAll('[data-nation]')) {
-      node.classList.toggle('is-selected', node.dataset.nation === this.selectedId);
+    for (const [nationId, el] of this.nodeEls) {
+      el.classList.toggle('is-selected', nationId === id);
     }
   }
+
+  /** Move the camera to a named region. */
+  focusOn(focusId) {
+    const focus = MAP_FOCUSES.find((f) => f.id === focusId) || MAP_FOCUSES[0];
+    const [x, y] = project(focus.lat, focus.lon);
+    this.camera.zoom = focus.zoom;
+    this.camera.x = W / 2 - x * focus.zoom;
+    this.camera.y = H / 2 - y * focus.zoom;
+    this.#clampCamera();
+    this.#applyCamera();
+  }
+
+  /** Centre the camera on one country without changing zoom. */
+  centreOn(nationId, zoom = null) {
+    const def = NATIONS_BY_ID[nationId];
+    if (!def) return;
+    if (zoom !== null) this.camera.zoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, zoom));
+    const [x, y] = project(def.lat, def.lon);
+    this.camera.x = W / 2 - x * this.camera.zoom;
+    this.camera.y = H / 2 - y * this.camera.zoom;
+    this.#clampCamera();
+    this.#applyCamera();
+  }
+
+  zoomBy(factor) {
+    this.#zoomAt(W / 2, H / 2, factor);
+  }
+
+  resetCamera() {
+    this.camera = { zoom: 1, x: 0, y: 0 };
+    this.#applyCamera();
+  }
+
+  get zoom() {
+    return this.camera.zoom;
+  }
+
+  // ── Rendering ────────────────────────────────────────────────────────────
 
   render(game) {
+    this.game = game;
     while (this.root.firstChild) this.root.removeChild(this.root.firstChild);
+    this.nodeEls.clear();
 
-    const defs = svg('defs');
-    const glow = svg('filter', { id: 'node-glow', x: '-60%', y: '-60%', width: '220%', height: '220%' });
-    glow.append(svg('feGaussianBlur', { stdDeviation: '6', result: 'b' }));
-    const merge = svg('feMerge');
-    merge.append(svg('feMergeNode', { in: 'b' }), svg('feMergeNode', { in: 'SourceGraphic' }));
-    glow.append(merge);
-    defs.append(glow);
-    this.root.append(defs);
+    this.root.append(this.#defs());
 
-    this.root.append(this.#graticule(), this.#regionLabels());
+    // Everything except the ocean backdrop lives under one pannable group.
+    this.root.append(svg('rect', { x: 0, y: 0, width: W, height: H, class: 'map-ocean' }));
 
-    const links = svg('g', { class: 'map-links' });
+    const scene = svg('g', { class: 'map-scene' });
+    this.scene = scene;
+    scene.append(this.#graticule(), this.#land(), this.#oceanLabels());
+    scene.append(this.#links(game));
+
     const nodes = svg('g', { class: 'map-nodes' });
-
-    // Wars first, so they sit under the nodes.
-    for (const war of game.wars) {
-      if (!war.active) continue;
-      for (const a of war.attackers) {
-        for (const b of war.defenders) {
-          links.append(this.#link(a, b, 'war'));
-        }
-      }
-    }
-    // The player's closest and worst relationships.
-    for (const id of Object.keys(game.nations)) {
-      if (id === game.playerId) continue;
-      const rel = getRelation(game, game.playerId, id);
-      if (rel >= 65) links.append(this.#link(game.playerId, id, 'ally'));
-      else if (rel <= -55) links.append(this.#link(game.playerId, id, 'rival'));
-    }
-
-    // Paint the big powers first so smaller neighbours end up on top and stay
-    // clickable where the map is crowded.
+    const labels = svg('g', { class: 'map-labels' });
+    // Big powers painted first so smaller neighbours land on top and stay clickable.
     const ranked = Object.keys(game.nations)
       .map((id) => ({ id, power: livePower(game, id) }))
       .sort((a, b) => b.power - a.power);
     const maxPower = Math.max(...ranked.map((r) => r.power), 1);
-
     for (const { id, power } of ranked) {
-      nodes.append(this.#node(game, id, power / maxPower));
+      const node = this.#node(game, id, power / maxPower);
+      nodes.append(node);
+      labels.append(this.#label(game, id, node.dataset));
+      this.nodeEls.set(id, node);
     }
+    scene.append(nodes, labels);
 
-    this.root.append(links, nodes);
-    this.#applySelection();
+    this.root.append(scene);
+    this.#applyCamera();
+    this.setSelected(this.selectedId);
+  }
+
+  #defs() {
+    const defs = svg('defs');
+    const glow = svg('filter', { id: 'pax-node-glow', x: '-70%', y: '-70%', width: '240%', height: '240%' });
+    glow.append(svg('feGaussianBlur', { stdDeviation: '5', result: 'b' }));
+    const merge = svg('feMerge');
+    merge.append(svg('feMergeNode', { in: 'b' }), svg('feMergeNode', { in: 'SourceGraphic' }));
+    glow.append(merge);
+    defs.append(glow);
+    return defs;
   }
 
   #graticule() {
@@ -113,20 +208,47 @@ export class WorldMap {
       const [x] = project(0, lon);
       g.append(svg('line', { x1: x, y1: 0, x2: x, y2: H }));
     }
-    for (let lat = LAT_BOTTOM; lat <= LAT_TOP; lat += 20) {
+    for (let lat = -40; lat <= 80; lat += 20) {
       const [, y] = project(lat, 0);
       g.append(svg('line', { x1: 0, y1: y, x2: W, y2: y, class: lat === 0 ? 'equator' : '' }));
     }
     return g;
   }
 
-  #regionLabels() {
-    const g = svg('g', { class: 'map-regions' });
-    for (const region of REGIONS) {
-      const [x, y] = project(region.lat, region.lon);
-      const text = svg('text', { x, y: y - 40, 'text-anchor': 'middle' });
-      text.textContent = region.name.toUpperCase();
+  #land() {
+    const g = svg('g', { class: 'map-land' });
+    for (const mass of LANDMASSES) {
+      g.append(svg('path', { d: ringToPath(mass.ring), class: 'map-land__shape' }));
+    }
+    return g;
+  }
+
+  #oceanLabels() {
+    const g = svg('g', { class: 'map-oceans' });
+    for (const ocean of OCEANS) {
+      const [x, y] = project(ocean.lat, ocean.lon);
+      const text = svg('text', { x, y, 'text-anchor': 'middle' });
+      text.textContent = ocean.name.toUpperCase();
       g.append(text);
+    }
+    return g;
+  }
+
+  #links(game) {
+    const g = svg('g', { class: 'map-links' });
+    for (const war of game.wars) {
+      if (!war.active) continue;
+      for (const a of war.attackers) {
+        for (const b of war.defenders) g.append(this.#link(a, b, 'war'));
+      }
+    }
+    if (this.mode === 'relations' || this.mode === 'conflict') {
+      for (const id of Object.keys(game.nations)) {
+        if (id === game.playerId) continue;
+        const rel = getRelation(game, game.playerId, id);
+        if (rel >= 65) g.append(this.#link(game.playerId, id, 'ally'));
+        else if (rel <= -55) g.append(this.#link(game.playerId, id, 'rival'));
+      }
     }
     return g;
   }
@@ -136,7 +258,6 @@ export class WorldMap {
     const b = NATIONS_BY_ID[bId];
     const [x1, y1] = project(a.lat, a.lon);
     const [x2, y2] = project(b.lat, b.lon);
-    // Curve the link so overlapping pairs stay legible.
     const mx = (x1 + x2) / 2;
     const my = (y1 + y2) / 2 - Math.abs(x2 - x1) * 0.12;
     return svg('path', {
@@ -145,83 +266,321 @@ export class WorldMap {
     });
   }
 
+  /**
+   * Colour + opacity for one country under the active view mode.
+   * Every value here comes from a theme variable, never a literal.
+   */
+  #encoding(game, id) {
+    const state = game.nations[id];
+    if (id === game.playerId) return { fill: 'var(--accent)', opacity: 1 };
+
+    switch (this.mode) {
+      case 'power': {
+        const ranked = Object.keys(game.nations).map((n) => livePower(game, n));
+        const min = Math.min(...ranked);
+        const max = Math.max(...ranked);
+        return { fill: rampStep((livePower(game, id) - min) / Math.max(1, max - min)), opacity: 1 };
+      }
+      case 'stability':
+        return { fill: rampStep(state.stability / 100), opacity: 1 };
+      case 'blocs': {
+        const alignment = alignmentOf(id);
+        return {
+          fill: alignment ? `var(--dv-cat-${alignment.slot})` : 'var(--dv-neutral)',
+          opacity: 1,
+        };
+      }
+      case 'conflict': {
+        const atWar = game.wars.some(
+          (w) => w.active && (w.attackers.includes(id) || w.defenders.includes(id)),
+        );
+        if (atWar) return { fill: 'var(--st-critical)', opacity: 1 };
+        const rel = getRelation(game, game.playerId, id);
+        if (rel <= -55) return { fill: 'var(--st-serious)', opacity: 1 };
+        if (rel <= -25) return { fill: 'var(--st-warning)', opacity: 1 };
+        return { fill: 'var(--dv-neutral)', opacity: 1 };
+      }
+      default: {
+        // Diverging: one hue per arm, intensity carried by opacity so no
+        // undocumented hexes get invented for the intermediate steps.
+        const rel = getRelation(game, game.playerId, id);
+        if (rel >= 55) return { fill: 'var(--dv-positive)', opacity: 1 };
+        if (rel >= 20) return { fill: 'var(--dv-positive)', opacity: 0.55 };
+        if (rel > -20) return { fill: 'var(--dv-neutral)', opacity: 1 };
+        if (rel > -55) return { fill: 'var(--dv-negative)', opacity: 0.55 };
+        return { fill: 'var(--dv-negative)', opacity: 1 };
+      }
+    }
+  }
+
   #node(game, id, powerRatio) {
     const def = NATIONS_BY_ID[id];
     const [x, y] = project(def.lat, def.lon);
     const isPlayer = id === game.playerId;
-    const relation = getRelation(game, game.playerId, id);
-    const radius = 4.5 + powerRatio * 11;
+    const baseRadius = 5 + powerRatio * 10;
+    const { fill, opacity } = this.#encoding(game, id);
 
     const g = svg('g', {
       class: `map-node${isPlayer ? ' is-player' : ''}`,
       transform: `translate(${x},${y})`,
       tabindex: '0',
       role: 'button',
-      'aria-label': `${def.name}: ${relationLabel(relation)}`,
+      'aria-label': `${def.name}. ${describeFor(game, id, this.mode)}`,
     });
     g.dataset.nation = id;
+    g.dataset.baseRadius = String(baseRadius);
+    g.dataset.major = String(powerRatio > 0.78 || isPlayer);
 
     if (isPlayer) {
-      g.append(svg('circle', { r: radius + 7, class: 'map-node__halo', filter: 'url(#node-glow)' }));
+      g.append(svg('circle', { r: baseRadius + 7, class: 'map-node__halo', filter: 'url(#pax-node-glow)' }));
     }
     const atWar = game.wars.some(
       (w) => w.active && (w.attackers.includes(id) || w.defenders.includes(id)),
     );
-    if (atWar) g.append(svg('circle', { r: radius + 4, class: 'map-node__war' }));
+    // The war ring is a shape channel, so "at war" never rests on colour alone.
+    if (atWar) g.append(svg('circle', { r: baseRadius + 4.5, class: 'map-node__war' }));
 
-    // Invisible, generous hit area — the dots are small and the labels push
-    // the group's bounding box away from them.
-    g.append(svg('circle', { r: Math.max(radius + 3, 8), class: 'map-node__hit' }));
+    g.append(svg('circle', { r: baseRadius + 4, class: 'map-node__hit' }));
+    g.append(svg('circle', { r: baseRadius, class: 'map-node__dot', style: `fill:${fill};fill-opacity:${opacity}` }));
 
-    g.append(
-      svg('circle', {
-        r: radius,
-        class: 'map-node__dot',
-        style: `fill:${isPlayer ? 'var(--accent)' : relationColour(relation)}`,
-      }),
-    );
-
-    // Label sparingly: Europe alone would otherwise be a wall of text.
-    if (isPlayer || powerRatio > 0.82) {
-      const label = svg('text', { y: radius + 13, 'text-anchor': 'middle', class: 'map-node__label' });
-      label.textContent = def.name;
-      g.append(label);
-    }
-
-    g.addEventListener('click', () => this.onSelect?.(id));
+    g.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.onSelect?.(id);
+    });
     g.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' || e.key === ' ') {
         e.preventDefault();
         this.onSelect?.(id);
       }
     });
-    g.addEventListener('pointerenter', () => this.#showTip(game, id));
-    g.addEventListener('pointerleave', () => {
-      this.tooltip.hidden = true;
-    });
-    g.addEventListener('pointermove', (e) => this.#moveTip(e));
+    g.addEventListener('pointerenter', () => this.onHover?.(id));
+    g.addEventListener('focus', () => this.onHover?.(id));
+    g.addEventListener('pointerleave', () => this.onHover?.(null));
+    g.addEventListener('blur', () => this.onHover?.(null));
 
     return g;
   }
 
-  #showTip(game, id) {
+  #label(game, id, dataset) {
     const def = NATIONS_BY_ID[id];
-    const state = game.nations[id];
-    const relation = getRelation(game, game.playerId, id);
-    this.tooltip.innerHTML = `
-      <strong>${def.flag} ${def.name}</strong>
-      <span>GDP $${state.gdp.toFixed(2)}T · Military ${Math.round(state.military)} · Stability ${Math.round(state.stability)}</span>
-      <span class="tip-relation" style="color:${relationColour(relation)}">${
-        id === game.playerId ? 'Your country' : `${relationLabel(relation)} (${Math.round(relation)})`
-      }</span>`;
-    this.tooltip.hidden = false;
+    const [x, y] = project(def.lat, def.lon);
+    const text = svg('text', {
+      x, y: y + Number(dataset.baseRadius) + 12,
+      'text-anchor': 'middle',
+      class: `map-node__label${id === game.playerId ? ' is-player' : ''}`,
+    });
+    text.dataset.labelFor = id;
+    text.dataset.baseRadius = dataset.baseRadius;
+    text.dataset.major = dataset.major;
+    text.textContent = def.name;
+    return text;
   }
 
-  #moveTip(event) {
-    const bounds = this.container.getBoundingClientRect();
-    const x = event.clientX - bounds.left;
-    const y = event.clientY - bounds.top;
-    this.tooltip.style.left = `${Math.min(x + 14, bounds.width - 200)}px`;
-    this.tooltip.style.top = `${Math.max(y - 60, 8)}px`;
+  // ── Camera ───────────────────────────────────────────────────────────────
+
+  #bindCamera() {
+    let dragging = false;
+    let moved = false;
+    let last = null;
+
+    this.root.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      const point = this.#toSvg(e.clientX, e.clientY);
+      this.#zoomAt(point.x, point.y, e.deltaY < 0 ? 1.18 : 1 / 1.18);
+    }, { passive: false });
+
+    this.root.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0) return;
+      dragging = true;
+      moved = false;
+      last = { x: e.clientX, y: e.clientY };
+      this.root.classList.add('is-dragging');
+    });
+
+    this.root.addEventListener('pointermove', (e) => {
+      if (!dragging) return;
+      const rect = this.root.getBoundingClientRect();
+      const scale = W / rect.width;
+      const dx = (e.clientX - last.x) * scale;
+      const dy = (e.clientY - last.y) * scale;
+      if (!moved && Math.abs(dx) + Math.abs(dy) > 2) {
+        moved = true;
+        // Capture only once a real drag starts. Capturing on pointerdown
+        // retargets the subsequent click to the <svg>, which swallowed every
+        // click on a country.
+        try {
+          this.root.setPointerCapture(e.pointerId);
+        } catch {
+          /* capture is a nicety, not a requirement */
+        }
+      }
+      if (!moved) return;
+      this.camera.x += dx;
+      this.camera.y += dy;
+      last = { x: e.clientX, y: e.clientY };
+      this.#clampCamera();
+      this.#applyCamera();
+    });
+
+    const endDrag = (e) => {
+      if (!dragging) return;
+      dragging = false;
+      this.root.classList.remove('is-dragging');
+      try {
+        this.root.releasePointerCapture(e.pointerId);
+      } catch {
+        /* pointer already released */
+      }
+    };
+    this.root.addEventListener('pointerup', endDrag);
+    this.root.addEventListener('pointercancel', endDrag);
+
+    // Clicking empty ocean clears the pinned selection, but only if you did
+    // not just finish a pan.
+    this.root.addEventListener('click', (e) => {
+      // Only a genuine click on open water clears the pinned country.
+      if (moved) return;
+      if (e.target instanceof Element && e.target.closest('.map-node')) return;
+      this.onSelect?.(null);
+    });
+
+    this.root.addEventListener('keydown', (e) => {
+      const step = 40;
+      if (e.key === '+' || e.key === '=') this.zoomBy(1.25);
+      else if (e.key === '-' || e.key === '_') this.zoomBy(1 / 1.25);
+      else if (e.key === '0') this.resetCamera();
+      else if (e.key === 'ArrowLeft') this.#pan(step, 0);
+      else if (e.key === 'ArrowRight') this.#pan(-step, 0);
+      else if (e.key === 'ArrowUp') this.#pan(0, step);
+      else if (e.key === 'ArrowDown') this.#pan(0, -step);
+      else return;
+      e.preventDefault();
+    });
+  }
+
+  #pan(dx, dy) {
+    this.camera.x += dx;
+    this.camera.y += dy;
+    this.#clampCamera();
+    this.#applyCamera();
+  }
+
+  #toSvg(clientX, clientY) {
+    const rect = this.root.getBoundingClientRect();
+    return {
+      x: ((clientX - rect.left) / rect.width) * W,
+      y: ((clientY - rect.top) / rect.height) * H,
+    };
+  }
+
+  /** Zoom keeping the point under the cursor fixed. */
+  #zoomAt(px, py, factor) {
+    const before = this.camera.zoom;
+    const after = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, before * factor));
+    if (after === before) return;
+    // Solve for the translation that keeps (px, py) over the same world point.
+    this.camera.x = px - ((px - this.camera.x) / before) * after;
+    this.camera.y = py - ((py - this.camera.y) / before) * after;
+    this.camera.zoom = after;
+    this.#clampCamera();
+    this.#applyCamera();
+  }
+
+  /** Keep the map covering the viewport — no panning off into empty space. */
+  #clampCamera() {
+    const z = this.camera.zoom;
+    const minX = W - W * z;
+    const minY = H - H * z;
+    this.camera.x = Math.min(0, Math.max(minX, this.camera.x));
+    this.camera.y = Math.min(0, Math.max(minY, this.camera.y));
+  }
+
+  #applyCamera() {
+    const { zoom, x, y } = this.camera;
+    if (this.scene) {
+      this.scene.setAttribute('transform', `translate(${x},${y}) scale(${zoom})`);
+    }
+    this.root.dataset.zoom = zoom.toFixed(2);
+
+    // Counter-scale the marks so they keep a constant on-screen size: zooming in
+    // then genuinely separates crowded regions instead of magnifying the blobs.
+    const inv = 1 / zoom;
+    for (const [, node] of this.nodeEls) {
+      const base = Number(node.dataset.baseRadius) || 6;
+      for (const circle of node.querySelectorAll('circle')) {
+        const cls = circle.getAttribute('class') || '';
+        const offset = cls.includes('halo') ? 7 : cls.includes('war') ? 4.5 : cls.includes('hit') ? 4 : 0;
+        circle.setAttribute('r', String((base + offset) * inv));
+      }
+    }
+    for (const label of this.root.querySelectorAll('.map-labels text')) {
+      const base = Number(label.dataset.baseRadius) || 6;
+      const def = NATIONS_BY_ID[label.dataset.labelFor];
+      const [, y] = project(def.lat, def.lon);
+      label.setAttribute('y', String(y + (base + 11) * inv));
+      label.setAttribute('font-size', String(11 * inv));
+      // Everything gets a name once you have zoomed in far enough to read it.
+      label.style.opacity = label.dataset.major === 'true' || zoom >= 1.8 ? '' : '0';
+    }
+    for (const el of this.root.querySelectorAll('.map-oceans text')) {
+      el.setAttribute('font-size', String(13 * inv));
+    }
+    this.root.style.setProperty('--map-inv-zoom', String(inv));
+    this.onViewChange?.(this.camera);
+  }
+}
+
+function rampStep(ratio) {
+  const step = Math.min(5, Math.max(1, Math.ceil(ratio * 5) || 1));
+  return `var(--dv-seq-${step})`;
+}
+
+/** The accessible-name text for a node under the active mode. */
+function describeFor(game, id, mode) {
+  const state = game.nations[id];
+  switch (mode) {
+    case 'power': return `Power ${Math.round(livePower(game, id))}`;
+    case 'stability': return `Stability ${Math.round(state.stability)}`;
+    case 'blocs': return alignmentOf(id)?.name || 'Non-aligned';
+    case 'conflict':
+      return game.wars.some((w) => w.active && (w.attackers.includes(id) || w.defenders.includes(id)))
+        ? 'At war'
+        : 'Not at war';
+    default: return `Relation ${Math.round(getRelation(game, game.playerId, id))}`;
+  }
+}
+
+/** Legend rows for the active mode: [{ label, fill, opacity, shape }]. */
+export function legendFor(mode) {
+  switch (mode) {
+    case 'power':
+    case 'stability':
+      return [
+        { label: 'Low', fill: 'var(--dv-seq-1)' },
+        { label: '', fill: 'var(--dv-seq-2)' },
+        { label: '', fill: 'var(--dv-seq-3)' },
+        { label: '', fill: 'var(--dv-seq-4)' },
+        { label: 'High', fill: 'var(--dv-seq-5)' },
+      ];
+    case 'blocs':
+      return [
+        ...ALIGNMENTS.map((a) => ({ label: a.name, fill: `var(--dv-cat-${a.slot})` })),
+        { label: 'Non-aligned', fill: 'var(--dv-neutral)' },
+      ];
+    case 'conflict':
+      return [
+        { label: 'At war', fill: 'var(--st-critical)', shape: 'ring' },
+        { label: 'Hostile', fill: 'var(--st-serious)' },
+        { label: 'Cool', fill: 'var(--st-warning)' },
+        { label: 'No friction', fill: 'var(--dv-neutral)' },
+      ];
+    default:
+      return [
+        { label: 'Allied', fill: 'var(--dv-positive)' },
+        { label: 'Friendly', fill: 'var(--dv-positive)', opacity: 0.55 },
+        { label: 'Neutral', fill: 'var(--dv-neutral)' },
+        { label: 'Cool', fill: 'var(--dv-negative)', opacity: 0.55 },
+        { label: 'Hostile', fill: 'var(--dv-negative)' },
+      ];
   }
 }

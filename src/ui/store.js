@@ -35,7 +35,16 @@ export function saveAiConfig(config) {
 }
 
 export function loadPrefs() {
-  return { lastNation: 'usa', lastDifficulty: 5, lastLength: 40, ...readJson(PREFS_KEY, {}) };
+  return {
+    lastNation: 'usa',
+    lastDifficulty: 5,
+    lastLength: 40,
+    lastWorldMode: 'current',
+    theme: 'situation',
+    uiScale: 'normal',
+    seenHelp: false,
+    ...readJson(PREFS_KEY, {}),
+  };
 }
 
 export function savePrefs(prefs) {

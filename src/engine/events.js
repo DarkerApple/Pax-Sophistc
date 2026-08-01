@@ -210,6 +210,100 @@ export const EVENTS = [
   },
 
   // ─── Decisions (land on the player's desk) ───────────────────────────────
+  // ─── Black swans (Chaotic World only) ────────────────────────────────────
+  {
+    id: 'swan-alignment-flip',
+    kind: 'pair',
+    chaosOnly: true,
+    title: 'Alignment Reversal',
+    weight: 1.6,
+    pickPair: (game, rng) => {
+      const nations = Object.values(game.nations);
+      const a = rng.pick(nations);
+      const b = rng.pick(nations.filter((n) => n.id !== a.id));
+      return a && b ? [a, b, 1] : null;
+    },
+    build: (game, rng, a, b) => {
+      const warming = rng.bool(0.5);
+      return {
+        text: warming
+          ? `${NATIONS_BY_ID[a.id].name} and ${NATIONS_BY_ID[b.id].name} announce a rapprochement nobody in either foreign ministry saw coming.`
+          : `${NATIONS_BY_ID[a.id].name} abruptly repudiates its understanding with ${NATIONS_BY_ID[b.id].name}. Ambassadors are recalled the same afternoon.`,
+        relationDelta: warming ? rng.float(35, 70) : -rng.float(35, 70),
+        worldTension: warming ? -rng.float(2, 6) : rng.float(5, 12),
+      };
+    },
+  },
+  {
+    id: 'swan-market-crash',
+    kind: 'global',
+    chaosOnly: true,
+    title: 'Global Market Dislocation',
+    weight: 1.2,
+    build: (game, rng) => ({
+      text: 'Something breaks in the plumbing of global finance and nobody can say what. Every asset class moves at once, in the same direction.',
+      global: { growth: -rng.float(0.4, 0.9), unrest: rng.float(2, 5), stability: -1.5 },
+      worldTension: rng.float(4, 10),
+    }),
+  },
+  {
+    id: 'swan-breakthrough-cascade',
+    kind: 'global',
+    chaosOnly: true,
+    title: 'Technological Discontinuity',
+    weight: 1.0,
+    build: (game, rng) => ({
+      text: 'A capability everyone assumed was a decade away arrives at once, and half the world\'s industrial planning is obsolete by lunchtime.',
+      global: { growth: rng.float(0.2, 0.6) },
+      favoured: ['semiconductors', 'ai-investment', 'compute', 'lithography-monopoly', 'chip-packaging'],
+      punishesLowTech: true,
+      worldTension: rng.float(3, 9),
+    }),
+  },
+  {
+    id: 'swan-defection-wave',
+    kind: 'nation',
+    chaosOnly: true,
+    title: 'State Failure',
+    weight: 1.3,
+    pick: (game, rng) => rng.weighted(Object.values(game.nations), (n) => Math.max(0.2, (70 - n.stability) / 8)),
+    build: (game, rng, nation) => ({
+      text: `Central authority in ${NATIONS_BY_ID[nation.id].name} simply stops functioning. Ministries answer to nobody and the currency goes with it.`,
+      self: {
+        stability: -rng.float(12, 26),
+        unrest: rng.float(10, 24),
+        influence: -rng.float(4, 10),
+        gdpPct: -rng.float(1.5, 4),
+      },
+      modifier: { label: 'Collapse of authority', turns: 6, growth: -0.5, unrest: 1.6 },
+    }),
+  },
+  {
+    id: 'swan-windfall',
+    kind: 'nation',
+    chaosOnly: true,
+    title: 'Improbable Windfall',
+    weight: 1.0,
+    pick: (game, rng) => rng.pick(Object.values(game.nations)),
+    build: (game, rng, nation) => ({
+      text: `A discovery, a settlement, or an accident of timing hands ${NATIONS_BY_ID[nation.id].name} a fortune it did nothing to earn.`,
+      self: { influence: rng.float(1, 4), gdpPct: rng.float(1, 3.5), approval: rng.float(2, 6) },
+      modifier: { label: 'Windfall revenues', turns: 6, growth: 0.4, revenue: 0 },
+    }),
+  },
+  {
+    id: 'swan-general-strike',
+    kind: 'global',
+    chaosOnly: true,
+    title: 'Simultaneous Unrest',
+    weight: 1.1,
+    build: (game, rng) => ({
+      text: 'Unconnected protest movements on four continents converge on the same week, the same slogans, and the same enemies.',
+      global: { unrest: rng.float(3, 7), stability: -rng.float(1, 3), growth: -0.2 },
+      worldTension: rng.float(3, 8),
+    }),
+  },
+
   {
     id: 'decision-ultimatum',
     kind: 'decision',
@@ -457,25 +551,32 @@ export function rollEvents(game, rng, mods) {
   const entries = [];
   let decision = null;
 
-  const count = rng.bool(0.55 * mods.eventFrequency) ? 2 : rng.bool(0.85 * mods.eventFrequency) ? 1 : 0;
+  const allowed = (e) => !e.chaosOnly || mods.blackSwans;
+  const ambientPool = EVENTS.filter((e) => e.kind !== 'decision' && allowed(e));
+  const decisionPool = EVENTS.filter((e) => e.kind === 'decision' && allowed(e));
 
-  const wantDecision = !game.pendingDecision && rng.bool(0.4 * mods.eventFrequency);
-  const pool = EVENTS.filter((e) => (e.kind === 'decision') === wantDecision);
+  // Ambient events and desk decisions are rolled independently. They used to
+  // share one budget, which meant a high-frequency world spent every turn on a
+  // decision and never produced a single ambient event.
+  const expected = 0.85 * mods.eventFrequency;
+  let count = Math.min(4, Math.floor(expected) + (rng.bool(expected % 1) ? 1 : 0));
 
-  for (let i = 0; i < Math.max(count, wantDecision ? 1 : 0); i++) {
-    const candidates = pool.filter((e) => weightOf(e, game, rng) > 0);
+  for (let i = 0; i < count; i++) {
+    const candidates = ambientPool.filter((e) => weightOf(e, game, rng) > 0);
     if (!candidates.length) break;
     const event = rng.weighted(candidates, (e) => weightOf(e, game, rng));
     if (!event) break;
     const result = fireEvent(game, rng, mods, event);
-    if (!result) continue;
-    if (result.decision) {
-      decision = result.decision;
-      break;
+    if (result?.entry) entries.push(result.entry);
+  }
+
+  if (!game.pendingDecision && rng.bool(Math.min(0.8, 0.4 * mods.eventFrequency))) {
+    const candidates = decisionPool.filter((e) => weightOf(e, game, rng) > 0);
+    if (candidates.length) {
+      const event = rng.weighted(candidates, (e) => weightOf(e, game, rng));
+      const result = event ? fireEvent(game, rng, mods, event) : null;
+      if (result?.decision) decision = result.decision;
     }
-    entries.push(result.entry);
-    // Only ever one decision per turn; ambient events can stack.
-    if (wantDecision) break;
   }
 
   return { entries, decision };
