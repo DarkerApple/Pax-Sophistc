@@ -5,6 +5,7 @@ import { NATIONS, NATIONS_BY_ID, RELATION_ANCHORS } from '../src/data/nations.js
 import { ACTIONS, ACTIONS_BY_ID, actionAvailability, actionCost } from '../src/engine/actions.js';
 import { clampDifficulty, difficultyModifiers, difficultyPreview } from '../src/engine/difficulty.js';
 import { applyEffect, scaleEffect } from '../src/engine/effects.js';
+import { availableFunds, creditLimit, debtStress, serviceDebt } from '../src/engine/finance.js';
 import { Rng, hashSeed } from '../src/engine/rng.js';
 import { successChance } from '../src/engine/resolve.js';
 import {
@@ -186,7 +187,13 @@ test('action costs scale with the size of the economy', () => {
 
 test('availability blocks unaffordable and untargeted orders', () => {
   const game = createGame({ playerNationId: 'cub', seed: 'avail' });
+
+  // An empty till is not a dead end — the credit line is still there.
   game.nations.cub.treasury = 0;
+  assert.equal(actionAvailability(game, ACTIONS_BY_ID.stimulus).ok, true);
+
+  // Past the credit line, though, it really is unaffordable.
+  game.nations.cub.treasury = -availableFunds(game.nations.cub);
   assert.equal(actionAvailability(game, ACTIONS_BY_ID.stimulus).ok, false);
 
   game.nations.cub.treasury = 1e6;

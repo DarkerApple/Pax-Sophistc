@@ -1,7 +1,7 @@
 // The command screen: dashboard, inspector, map, briefing feed, order planner.
 
 import { NATIONS_BY_ID } from '../data/nations.js';
-import { ACTIONS, CATEGORIES, actionAvailability, actionCost } from '../engine/actions.js';
+import { ACTIONS, CATEGORIES, actionAvailability, actionCost, actionsInCategory } from '../engine/actions.js';
 import { successChance } from '../engine/resolve.js';
 import {
   activeWarsFor,
@@ -11,6 +11,8 @@ import {
   rankedNations,
 } from '../engine/state.js';
 import { scoreRun } from '../engine/turn.js';
+import { LADDER_MAX, playerLadders } from '../engine/consequences.js';
+import { availableFunds, creditLimit, debtOf, describeFinances } from '../engine/finance.js';
 import { gameModifiers } from '../engine/worldmodes.js';
 import { h, money, mount, relationColour, relationLabel, statColour } from './dom.js';
 import { MAP_FOCUSES, VIEW_MODES, WorldMap, alignmentOf, legendFor } from './map.js';
@@ -66,14 +68,20 @@ export class GameScreen {
     if (!game) return;
 
     const camera = this.map ? { ...this.map.camera } : null;
+    // Re-rendering replaces the DOM, which would otherwise throw every column
+    // back to the top every time a modal opens or an order is queued.
+    const scrolls = [...this.root.querySelectorAll('[data-scroll]')]
+      .map((el) => [el.dataset.scroll, el.scrollTop]);
+    const pageScroll = window.scrollY;
 
     mount(this.root,
       h('div.game',
         this.#topbar(),
         h('div.game__body',
-          h('div.col.col--left', this.#dashboard(), this.#inspector(), this.#objectives(), this.#relations()),
-          h('div.col.col--centre', this.#mapPanel(), this.#feed()),
-          h('div.col.col--right', this.#planner()),
+          h('div.col.col--left', { dataset: { scroll: 'left' } },
+            this.#dashboard(), this.#inspector(), this.#escalation(), this.#objectives(), this.#relations()),
+          h('div.col.col--centre', { dataset: { scroll: 'centre' } }, this.#mapPanel(), this.#feed()),
+          h('div.col.col--right', { dataset: { scroll: 'right' } }, this.#planner()),
         ),
         this.#actionBar(),
       ),
@@ -82,6 +90,12 @@ export class GameScreen {
       this.helpOpen ? this.#helpModal() : null,
       game.status !== 'active' ? this.#endgameModal() : null,
     );
+
+    for (const [key, top] of scrolls) {
+      const el = this.root.querySelector(`[data-scroll="${key}"]`);
+      if (el) el.scrollTop = top;
+    }
+    if (pageScroll) window.scrollTo(0, pageScroll);
 
     const holder = this.root.querySelector('[data-map]');
     if (holder) {
@@ -128,7 +142,10 @@ export class GameScreen {
       ),
       h('div.topbar__metrics',
         metric('Date', dateLabel(game), `Quarter ${game.turn} of ${game.totalTurns}`),
-        metric('Treasury', money(state.treasury), 'Money you can spend on orders this quarter'),
+        state.treasury >= 0
+          ? metric('Treasury', money(state.treasury), 'Cash in hand. You can also borrow against your credit line.')
+          : metric('Debt', money(-state.treasury), `${describeFinances(state).label}. ${describeFinances(state).detail}`, 'var(--bad)'),
+        metric('Can spend', money(availableFunds(state)), 'Cash plus your remaining credit line'),
         metric('Political capital', `${game.politicalCapital}`, 'Every order costs some. It refills each quarter.'),
         metric('GDP', `$${state.gdp.toFixed(2)}T`, 'Your economy, annualised'),
         metric('World tension', `${Math.round(game.worldTension)}`, 'How close the world is to a general crisis', statColour(game.worldTension, true)),
@@ -273,6 +290,37 @@ export class GameScreen {
     function row(label, value) {
       return h('div.inspector__row', h('span', label), h('span', String(value)));
     }
+  }
+
+  /** The escalation ladders the player is currently standing on. */
+  #escalation() {
+    const ladders = playerLadders(this.game).filter((l) => l.value >= 1);
+    if (!ladders.length) return null;
+
+    return h('section.panel',
+      h('h2.panel__title', 'Escalation'),
+      h('p.panel__note',
+        'The higher a ladder climbs, the harder and the longer the answer comes back.'),
+      ladders.slice(0, 5).map((l) => {
+        const def = NATIONS_BY_ID[l.id];
+        return h('div.ladder', { onpointerenter: () => this.#onMapHover(l.id), onpointerleave: () => this.#onMapHover(null) },
+          h('div.ladder__head',
+            h('span', `${def.flag} ${def.name}`),
+            h('span.ladder__band', { class: `ladder__band is-${l.band}` }, l.label),
+          ),
+          h('div.stat__track',
+            h('div.stat__fill', {
+              style: {
+                width: `${(l.value / LADDER_MAX) * 100}%`,
+                background: l.value >= 8.5 ? 'var(--st-critical)'
+                  : l.value >= 6 ? 'var(--st-serious)'
+                  : l.value >= 3.5 ? 'var(--st-warning)' : 'var(--muted-2)',
+              },
+            }),
+          ),
+        );
+      }),
+    );
   }
 
   #objectives() {
@@ -491,9 +539,16 @@ export class GameScreen {
     const state = game.nations[game.playerId];
     const spend = this.orders.reduce((sum, o) => sum + o.cost, 0);
     const pcSpend = this.orders.reduce((sum, o) => sum + o.pc, 0);
+    // Never render a negative allowance; overspending is already blocked.
+    const funds = Math.max(0, availableFunds(state));
+    const finances = describeFinances(state);
     const recommended = this.#recommendedIds();
 
-    const catalogue = ACTIONS.filter((a) => a.category === this.category)
+    const atWar = activeWarsFor(game, game.playerId).length > 0;
+    const categories = CATEGORIES.filter((c) => !c.wartimeOnly || atWar);
+    if (!categories.some((c) => c.id === this.category)) this.category = 'economy';
+
+    const catalogue = actionsInCategory(this.category)
       .sort((a, b) => Number(recommended.has(b.id)) - Number(recommended.has(a.id)));
 
     return h('section.panel.panel--planner',
@@ -505,15 +560,21 @@ export class GameScreen {
       h('div.budget',
         h('div.budget__row',
           h('span', 'Money committed'),
-          h('span', { class: spend > state.treasury ? 'is-over' : '' }, `${money(spend)} of ${money(state.treasury)}`),
+          h('span', { class: spend > funds ? 'is-over' : '' }, `${money(spend)} of ${money(funds)}`),
         ),
         h('div.budget__track',
           h('div.budget__fill', {
             style: {
-              width: `${Math.min(100, (spend / Math.max(1, state.treasury)) * 100)}%`,
-              background: spend > state.treasury ? 'var(--bad)' : 'var(--accent)',
+              width: `${Math.min(100, (spend / Math.max(1, funds)) * 100)}%`,
+              background: spend > funds ? 'var(--bad)' : spend > state.treasury ? 'var(--warn)' : 'var(--accent)',
             },
           }),
+        ),
+        h('div.budget__row',
+          h('span', debtOf(state) ? `Debt · ${finances.label}` : 'Credit line'),
+          h('span', debtOf(state)
+            ? `${money(debtOf(state))} owed`
+            : `${money(creditLimit(state))} available`),
         ),
         h('div.budget__row',
           h('span', 'Political capital'),
@@ -542,9 +603,9 @@ export class GameScreen {
         : h('p.empty.empty--tight', 'Nothing queued yet. Pick up to four orders below, then end the quarter.'),
 
       h('div.chips.chips--tight',
-        CATEGORIES.map((c) =>
+        categories.map((c) =>
           h('button.chip', {
-            class: this.category === c.id ? 'chip is-active' : 'chip',
+            class: `chip${this.category === c.id ? ' is-active' : ''}${c.wartimeOnly ? ' chip--war' : ''}`,
             onclick: () => { this.category = c.id; this.render(); },
           }, `${c.icon} ${c.name}`),
         ),
@@ -584,7 +645,7 @@ export class GameScreen {
     const queued = this.orders.length >= 4;
     const chance = successChance(game, action, game.playerId, null, mods);
 
-    const remainingMoney = state.treasury - this.orders.reduce((s, o) => s + o.cost, 0);
+    const remainingMoney = availableFunds(state) - this.orders.reduce((s, o) => s + o.cost, 0);
     const remainingPc = game.politicalCapital - this.orders.reduce((s, o) => s + o.pc, 0);
     const blocked = queued || cost > remainingMoney || action.pc > remainingPc;
     const why = queued
@@ -611,6 +672,7 @@ export class GameScreen {
       h('div.action__meta',
         h('span', money(cost)),
         h('span', `${action.pc} PC`),
+        cost > state.treasury && !blocked ? h('span.action__tag.action__tag--risk', 'on credit') : null,
         recommended ? h('span.action__tag.action__tag--rec', 'suggested') : null,
         action.target === 'nation' ? h('span.action__tag', 'pick a target') : null,
         action.risk === 'high' ? h('span.action__tag.action__tag--risk', 'can backfire') : null,
@@ -765,12 +827,12 @@ export class GameScreen {
     const state = game.nations[game.playerId];
     const spend = this.orders.reduce((sum, o) => sum + o.cost, 0);
     const pcSpend = this.orders.reduce((sum, o) => sum + o.pc, 0);
-    const overBudget = spend > state.treasury || pcSpend > game.politicalCapital;
+    const overBudget = spend > availableFunds(state) || pcSpend > game.politicalCapital;
     const undecided = Boolean(game.pendingDecision && !this.decisionChoice);
 
     // Leaving money and capital on the table is the commonest beginner mistake,
     // so say so rather than letting the quarter quietly go to waste.
-    const spareMoney = state.treasury - spend;
+    const spareMoney = availableFunds(state) - spend;
     const sparePc = game.politicalCapital - pcSpend;
     const cheapest = Math.min(...ACTIONS.map((a) => actionCost(a, state)));
     const idle = this.orders.length < 4 && sparePc >= 1 && spareMoney > cheapest;

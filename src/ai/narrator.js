@@ -14,7 +14,7 @@ import {
   openingSystemPrompt,
 } from './prompts.js';
 import { sanitizeBriefing, sanitizeCustomAction } from './schema.js';
-import { offlineBriefing, offlineOpening } from './offline.js';
+import { offlineAdjudication, offlineBriefing, offlineOpening } from './offline.js';
 
 export class Narrator {
   constructor(config) {
@@ -79,7 +79,7 @@ export class Narrator {
       orderText,
     };
 
-    if (!this.usingAi) return { ...offlineAdjudication(orderText), source: 'offline' };
+    if (!this.usingAi) return offlineAdjudication(game, orderText);
 
     try {
       const raw = await this.client.completeJson({
@@ -94,7 +94,7 @@ export class Narrator {
       return { ...clean, source: 'ai' };
     } catch (err) {
       this.lastError = err;
-      return { ...offlineAdjudication(orderText), source: 'offline', degraded: describeError(err) };
+      return { ...offlineAdjudication(game, orderText), degraded: describeError(err) };
     }
   }
 
@@ -129,32 +129,4 @@ function describeError(err) {
   return err.message || 'unknown error';
 }
 
-/** A deliberately cautious generic order, used when no model is available. */
-function offlineAdjudication(orderText) {
-  const text = String(orderText || '').trim();
-  const name = text.length > 58 ? `${text.slice(0, 55)}…` : text || 'Freeform order';
-  return {
-    feasible: true,
-    targetId: null,
-    rationale:
-      'Adjudicated locally without a language model: priced as a moderate, general-purpose initiative. Configure a free AI provider for orders that are read properly.',
-    refusal: null,
-    action: {
-      id: 'custom-order',
-      name,
-      category: 'diplomacy',
-      blurb: 'Freeform order, locally adjudicated.',
-      cost: { pctGdp: 0.6 },
-      pc: 2,
-      target: 'none',
-      baseSuccess: 0.55,
-      risk: 'medium',
-      skills: [['influence', 0.15], ['stability', 0.1]],
-      effects: {
-        success: { self: { influence: 2, approval: 2 } },
-        failure: { self: { approval: -2 } },
-      },
-    },
-  };
-}
 

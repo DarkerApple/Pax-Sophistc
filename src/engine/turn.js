@@ -5,6 +5,8 @@ import { gameModifiers } from './worldmodes.js';
 import { applyGlobalEvent, rollEvents } from './events.js';
 import { applyEffect } from './effects.js';
 import { runOpponents } from './opponents.js';
+import { decayLadders, domesticBlowback, playerLadders, resolveConsequences } from './consequences.js';
+import { availableFunds, creditLimit, debtOf, serviceDebt } from './finance.js';
 import { resolveAction, resolveDecision } from './resolve.js';
 import {
   QUARTERS,
@@ -50,6 +52,7 @@ export function advanceTurn(game, { orders = [], decisionChoice = null } = {}) {
       events: [],
       wars: [],
       economy: null,
+      consequences: [],
       newDecision: null,
       status: 'active',
     };
@@ -74,14 +77,32 @@ export function advanceTurn(game, { orders = [], decisionChoice = null } = {}) {
       game.pendingDecision = null;
     }
 
-    // 2. Player orders.
+    // 2. Player orders, and whatever they set off.
     for (const order of orders.slice(0, 4)) {
       const outcome = resolveAction(game, rng, mods, order, game.playerId);
-      if (outcome) report.playerOutcomes.push(outcome);
+      if (!outcome) continue;
+      report.playerOutcomes.push(outcome);
+      const chain = [
+        ...resolveConsequences(game, rng, mods, outcome),
+        ...domesticBlowback(game, rng, mods, outcome),
+      ];
+      outcome.chain = chain;
+      report.consequences.push(...chain);
     }
 
-    // 3. Everyone else.
+    // 3. Everyone else, and whatever they set off.
     report.worldOutcomes = runOpponents(game, rng, mods);
+    for (const outcome of report.worldOutcomes) {
+      // Everything aimed at the player provokes a chain; elsewhere in the world
+      // only some do, or the briefing drowns in other people's quarrels.
+      const touchesPlayer = outcome.targetId === game.playerId || outcome.actorId === game.playerId;
+      if (!touchesPlayer && !rng.bool(0.3)) continue;
+      const chain = resolveConsequences(game, rng, mods, outcome);
+      if (chain.length) {
+        outcome.chain = chain;
+        report.consequences.push(...chain);
+      }
+    }
 
     // 4. Random world events.
     const rolled = rollEvents(game, rng, mods);
@@ -100,6 +121,7 @@ export function advanceTurn(game, { orders = [], decisionChoice = null } = {}) {
 
     // 6. Books, modifiers, drift.
     report.economy = economyTick(game, rng, mods);
+    decayLadders(game);
     relationDrift(game, rng, mods);
     tensionDrift(game, rng, mods);
 
@@ -217,14 +239,9 @@ function economyTick(game, rng, mods) {
     const upkeep = state.gdp * 1000 * MILITARY_UPKEEP * (state.military / 60);
     state.treasury = state.treasury + revenue - upkeep;
 
-    // A bankrupt state starts eating itself.
-    if (state.treasury < 0) {
-      const shortfall = Math.min(1, -state.treasury / Math.max(1, state.gdp * 1000 * 0.05));
-      state.unrest = clamp(state.unrest + 4 * shortfall * mods.unrestMultiplier);
-      state.stability = clamp(state.stability - 2.5 * shortfall);
-      state.readiness = clamp(state.readiness - 2 * shortfall);
-      state.treasury = Math.max(state.treasury, -state.gdp * 1000 * 0.12);
-    }
+    // Deficits are financed, not magicked away.
+    const debtReport = serviceDebt(game, state, rng, mods);
+    if (isPlayer && debtReport) summary.debt = debtReport;
 
     // Drift back toward the country's structural equilibrium. Gains in
     // stability and approval are rented, never owned: stop paying and they go.
@@ -243,6 +260,23 @@ function economyTick(game, rng, mods) {
       summary.playerGrowth = Number(growth.toFixed(2));
       summary.playerRevenue = Math.round(revenue);
       summary.playerUpkeep = Math.round(upkeep);
+      // What actually moved the number, so the briefing can explain itself
+      // instead of just reporting a percentage.
+      summary.drivers = [
+        { label: 'underlying trend', value: state.baseGrowth },
+        { label: 'your programmes', value: effectiveMods },
+        { label: 'institutional strength', value: stabilityEffect },
+        { label: 'unrest', value: unrestEffect },
+        { label: 'technology', value: techEffect },
+        { label: 'the size you already are', value: convergence },
+        { label: 'the war', value: warDrag },
+      ]
+        .filter((d) => Math.abs(d.value) >= 0.03)
+        .sort((a, b) => Math.abs(b.value) - Math.abs(a.value))
+        .map((d) => ({ ...d, value: Number(d.value.toFixed(2)) }));
+      summary.modifierCount = state.modifiers.length;
+      summary.credit = Math.round(creditLimit(state));
+      summary.available = Math.round(availableFunds(state));
     }
     summary.worldGrowth += growth;
   }
@@ -383,6 +417,7 @@ function summariseReport(report) {
     date: report.date,
     headline: report.headline || null,
     playerActions: report.playerOutcomes.map((o) => `${o.actionName}: ${o.tierLabel}`),
+    consequences: report.consequences.map((c) => c.label),
     events: report.events.map((e) => e.title),
     wars: report.wars.filter((w) => w.type === 'war-end').map((w) => w.text),
   };
@@ -406,6 +441,10 @@ export function worldDigest(game, limit = 12) {
       stability: Math.round(r.state.stability),
       relationToPlayer: getRelation(game, game.playerId, r.state.id),
     })),
+    escalation: playerLadders(game)
+      .filter((l) => l.value >= 1.5)
+      .slice(0, 5)
+      .map((l) => ({ with: NATIONS_BY_ID[l.id].name, level: Number(l.value.toFixed(1)), band: l.label })),
     wars: game.wars
       .filter((w) => w.active)
       .map((w) => ({

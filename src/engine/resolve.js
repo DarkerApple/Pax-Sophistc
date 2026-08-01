@@ -7,6 +7,11 @@ import { applyEffect, describeChanges, scaleEffect } from './effects.js';
 import { clamp, getRelation, logEvent } from './state.js';
 import { concludeWar, declareWar, findWar } from './war.js';
 
+/** The first war this country is fighting, for orders that need no target. */
+function activeWarFor(game, id) {
+  return game.wars.find((w) => w.active && (w.attackers.includes(id) || w.defenders.includes(id)));
+}
+
 export const OUTCOME_TIERS = {
   critical: { label: 'Decisive success', scale: 1.55, tone: 'great' },
   success: { label: 'Success', scale: 1, tone: 'good' },
@@ -151,6 +156,37 @@ export function resolveAction(game, rng, mods, order, actorId = game.playerId) {
       signedTurn: game.turn,
     });
     outcome.notes.push('Mutual defence obligations now bind both parties.');
+  }
+
+  // War-room orders move the front itself, not just the national statistics.
+  if (action.warEffect || action.warEffectOnFailure) {
+    const war = targetId ? findWar(game, actorId, targetId) : activeWarFor(game, actorId);
+    if (war) {
+      const spec = succeeded ? action.warEffect : (action.warEffectOnFailure || null);
+      if (spec) {
+        const attacking = war.attackers.includes(actorId);
+        const sign = attacking ? 1 : -1;
+        const scale = tier === 'critical' ? 1.5 : tier === 'partial' ? 0.5 : 1;
+
+        if (spec.warScore) {
+          war.warScore = clamp(war.warScore + spec.warScore * sign * scale, -100, 100);
+        }
+        const ownSide = attacking ? 'attackers' : 'defenders';
+        const enemySide = attacking ? 'defenders' : 'attackers';
+        if (spec.ownExhaustion) {
+          war.exhaustion[ownSide] = clamp(war.exhaustion[ownSide] + spec.ownExhaustion * scale, 0, 100);
+        }
+        if (spec.enemyExhaustion) {
+          war.exhaustion[enemySide] = clamp(war.exhaustion[enemySide] + spec.enemyExhaustion * scale, 0, 100);
+        }
+        if (spec.casualties) war.casualties += Math.round(spec.casualties * scale);
+
+        outcome.warId = war.id;
+        outcome.notes.push(
+          `${war.name}: front ${spec.warScore > 0 ? 'moved in your favour' : 'gave ground'} (${Math.round(war.warScore)} on the hundred-point scale).`,
+        );
+      }
+    }
   }
 
   if (action.mediates && succeeded) {

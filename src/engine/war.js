@@ -14,8 +14,10 @@ import {
 } from './state.js';
 
 const HOME_GROUND_BONUS = 1.18;
-const DECISIVE_SCORE = 68;
-const EXHAUSTION_LIMIT = 88;
+// Wars used to grind for twenty quarters. They now reach a verdict in roughly
+// six to ten, and the verdict costs the loser considerably more.
+const DECISIVE_SCORE = 52;
+const EXHAUSTION_LIMIT = 82;
 
 export function findWar(game, a, b) {
   return game.wars.find(
@@ -106,29 +108,29 @@ export function tickWars(game, rng, mods) {
     const defPower = sidePower(game, war.defenders) * HOME_GROUND_BONUS * (1 - war.exhaustion.defenders / 170);
     const total = Math.max(1, atkPower + defPower);
 
-    const swing = ((atkPower - defPower) / total) * 17 + rng.normal(0, 4.5);
+    const swing = ((atkPower - defPower) / total) * 23 + rng.normal(0, 5.5);
     war.warScore = clamp(war.warScore + swing, -100, 100);
 
     const intensity = 1 + Math.min(1.2, total / 160);
-    war.casualties += Math.round(intensity * rng.float(8, 26) * mods.eventSeverity * 1000);
+    war.casualties += Math.round(intensity * rng.float(14, 38) * mods.eventSeverity * 1000);
 
     // Both sides pay, the losing side pays more.
     for (const [side, ids] of [['attackers', war.attackers], ['defenders', war.defenders]]) {
       const losing = side === 'attackers' ? war.warScore < 0 : war.warScore > 0;
       const pressure = losing ? 1.45 : 1;
       war.exhaustion[side] = clamp(
-        war.exhaustion[side] + rng.float(4, 9) * pressure * mods.eventSeverity,
+        war.exhaustion[side] + rng.float(5, 9.5) * pressure * mods.eventSeverity,
         0,
         100,
       );
       for (const id of ids) {
         const state = game.nations[id];
         if (!state) continue;
-        state.treasury -= state.gdp * 1000 * 0.018 * pressure;
+        state.treasury -= state.gdp * 1000 * 0.026 * pressure;
         state.readiness = clamp(state.readiness - rng.float(1.2, 3.4) * pressure);
         state.unrest = clamp(state.unrest + rng.float(0.8, 3) * pressure * mods.unrestMultiplier);
         state.stability = clamp(state.stability - rng.float(0.4, 1.6) * pressure);
-        state.gdp = Math.max(0.005, state.gdp * (1 - 0.006 * pressure));
+        state.gdp = Math.max(0.005, state.gdp * (1 - 0.009 * pressure));
         state.military = clamp(state.military - rng.float(0.2, 1.1) * pressure);
       }
     }
@@ -142,8 +144,10 @@ export function tickWars(game, rng, mods) {
     const decisive = Math.abs(war.warScore) >= DECISIVE_SCORE;
     const spent =
       war.exhaustion.attackers >= EXHAUSTION_LIMIT || war.exhaustion.defenders >= EXHAUSTION_LIMIT;
+    // Nothing is settled inside a single quarter, however lopsided it looks.
+    const longEnough = game.turn - war.startTurn >= 2;
 
-    if (decisive || spent) {
+    if (longEnough && (decisive || spent)) {
       reports.push(concludeWar(game, war, rng, decisive ? 'decisive' : 'exhaustion'));
     } else {
       reports.push({
@@ -238,28 +242,58 @@ export function concludeWar(game, war, rng, kind = 'decisive') {
       ? `${NATIONS_BY_ID[winners[0]].adjective} victory`
       : 'Stalemate';
 
+  const decisive = Math.abs(war.warScore) >= DECISIVE_SCORE;
+  const weight = decisive ? 1.6 : 1;
+
   for (const id of winners) {
     const state = game.nations[id];
     if (!state) continue;
-    state.influence = clamp(state.influence + rng.float(3, 8));
-    state.approval = clamp(state.approval + rng.float(4, 10));
-    state.stability = clamp(state.stability + 2);
+    state.influence = clamp(state.influence + rng.float(6, 14) * weight);
+    state.approval = clamp(state.approval + rng.float(8, 16));
+    state.stability = clamp(state.stability + rng.float(2, 5));
+    state.military = clamp(state.military + rng.float(1, 3));
     if (id === game.playerId) game.stats.warsWon += 1;
   }
+
   for (const id of losers) {
     const state = game.nations[id];
     if (!state) continue;
-    state.influence = clamp(state.influence - rng.float(5, 12));
-    state.approval = clamp(state.approval - rng.float(8, 16));
-    state.stability = clamp(state.stability - rng.float(4, 10));
-    state.gdp = Math.max(0.005, state.gdp * (1 - rng.float(0.02, 0.06)));
+    state.influence = clamp(state.influence - rng.float(10, 22) * weight);
+    state.approval = clamp(state.approval - rng.float(14, 26));
+    state.stability = clamp(state.stability - rng.float(8, 18) * weight);
+    state.unrest = clamp(state.unrest + rng.float(6, 14) * weight);
+    state.military = clamp(state.military - rng.float(4, 10) * weight);
+    state.gdp = Math.max(0.005, state.gdp * (1 - rng.float(0.04, 0.11) * weight));
     addModifier(game, id, {
       label: 'Post-war reconstruction',
-      turns: 8,
-      growth: -0.25,
-      unrest: 0.8,
+      turns: 10,
+      growth: -0.45,
+      unrest: 1.2,
       source: 'war',
     });
+  }
+
+  // Reparations: the loser pays, the winners split it.
+  if (decisive && winners.length && losers.length) {
+    let pot = 0;
+    for (const id of losers) {
+      const state = game.nations[id];
+      if (!state) continue;
+      const tribute = state.gdp * 1000 * rng.float(0.03, 0.07);
+      state.treasury -= tribute;
+      pot += tribute;
+      addModifier(game, id, {
+        label: 'Reparations',
+        turns: 8,
+        growth: -0.2,
+        source: 'war',
+      });
+    }
+    for (const id of winners) {
+      const state = game.nations[id];
+      if (state) state.treasury += pot / winners.length;
+    }
+    war.reparations = Math.round(pot);
   }
 
   // Everyone stops shooting; nobody forgets.

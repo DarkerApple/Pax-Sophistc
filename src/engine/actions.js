@@ -3,15 +3,22 @@
 // depend on the country's actual stats rather than a flat dice roll.
 //
 // cost.pctGdp is a percentage of ANNUAL GDP; cost.flat is in billions USD.
+// Orders are paid out of cash *plus* the country's credit line, so a deficit
+// is a problem to manage rather than a state with no legal moves.
 // skills shift the success chance: weight is the swing between a stat of 0 and 100.
 
+import { availableFunds } from './finance.js';
+
 export const CATEGORIES = [
-  { id: 'economy', name: 'Economy', icon: '₴', accent: '#4ade80' },
-  { id: 'military', name: 'Military', icon: '⚔', accent: '#f87171' },
-  { id: 'diplomacy', name: 'Diplomacy', icon: '⚖', accent: '#60a5fa' },
-  { id: 'domestic', name: 'Domestic', icon: '⌂', accent: '#fbbf24' },
-  { id: 'intelligence', name: 'Intelligence', icon: '◈', accent: '#c084fc' },
-  { id: 'technology', name: 'Technology', icon: '⚛', accent: '#22d3ee' },
+  { id: 'quick', name: 'Quick', icon: '⚡', synthetic: true },
+  { id: 'economy', name: 'Economy', icon: '₴' },
+  { id: 'military', name: 'Military', icon: '⚔' },
+  { id: 'diplomacy', name: 'Diplomacy', icon: '⚖' },
+  { id: 'domestic', name: 'Domestic', icon: '⌂' },
+  { id: 'intelligence', name: 'Intelligence', icon: '◈' },
+  { id: 'technology', name: 'Technology', icon: '⚛' },
+  // Only offered while there is a war to run.
+  { id: 'war', name: 'War room', icon: '✦', wartimeOnly: true },
 ];
 
 export const ACTIONS = [
@@ -207,7 +214,7 @@ export const ACTIONS = [
   {
     id: 'seek-peace',
     name: 'Sue for Peace',
-    category: 'military',
+    category: 'war',
     blurb: 'Open a channel, accept what the front line already decided.',
     cost: { pctGdp: 0.2 }, pc: 3, target: 'nation', baseSuccess: 0.5, risk: 'low',
     skills: [['influence', 0.24]], requiresWar: true, seeksPeace: true,
@@ -507,11 +514,259 @@ export const ACTIONS = [
       failure: { self: { tech: 2 }, modifier: { label: 'Fab overruns', turns: 4, growth: -0.2 } },
     },
   },
+
+  // ─── Quick orders ─────────────────────────────────────────────────────────
+  // Cheap, one point of political capital, no target. For turns where you want
+  // to keep the budget for something else.
+  {
+    id: 'address-nation',
+    name: 'Address the Nation',
+    category: 'domestic', quick: true,
+    blurb: 'Twenty minutes of airtime and a clear line. Cheap, and it buys a little room.',
+    cost: { pctGdp: 0.03, flat: 0.05 }, pc: 1, target: 'none', baseSuccess: 0.8, risk: 'low',
+    skills: [['approval', 0.16], ['influence', 0.08]],
+    effects: {
+      success: { self: { approval: 4, unrest: -2 } },
+      failure: { self: { approval: -2, unrest: 1 } },
+    },
+  },
+  {
+    id: 'emergency-cabinet',
+    name: 'Emergency Cabinet',
+    category: 'domestic', quick: true,
+    blurb: 'Pull the department heads into one room and force a decision out of them.',
+    cost: { pctGdp: 0.05 }, pc: 1, target: 'none', baseSuccess: 0.75, risk: 'low',
+    skills: [['stability', 0.18]],
+    effects: {
+      success: { self: { stability: 3, unrest: -2 } },
+      failure: { self: { approval: -1 } },
+    },
+  },
+  {
+    id: 'currency-intervention',
+    name: 'Currency Intervention',
+    category: 'economy', quick: true,
+    blurb: 'Lean on the exchange rate. Fast, technical, and only ever a holding measure.',
+    cost: { pctGdp: 0.35 }, pc: 1, target: 'none', baseSuccess: 0.66, risk: 'medium',
+    skills: [['stability', 0.14], ['tech', 0.08]],
+    effects: {
+      success: { modifier: { label: 'Stabilised currency', turns: 3, growth: 0.16 }, self: { unrest: -1 } },
+      failure: { self: { treasuryPctGdp: -0.3, approval: -2 } },
+    },
+  },
+  {
+    id: 'recall-ambassador',
+    name: 'Recall Your Ambassador',
+    category: 'diplomacy', quick: true,
+    blurb: 'A signal that costs nothing but says exactly one thing.',
+    cost: { pctGdp: 0.01, flat: 0.05 }, pc: 1, target: 'nation', baseSuccess: 0.9, risk: 'low',
+    skills: [],
+    effects: {
+      success: { relation: -9, self: { approval: 2 }, worldTension: 2 },
+      failure: { relation: -6, self: { influence: -1 } },
+    },
+  },
+  {
+    id: 'intelligence-review',
+    name: 'Intelligence Review',
+    category: 'intelligence', quick: true,
+    blurb: 'Make the agencies actually talk to each other for one week.',
+    cost: { pctGdp: 0.08 }, pc: 1, target: 'none', baseSuccess: 0.78, risk: 'low',
+    skills: [['tech', 0.14]],
+    effects: {
+      success: { self: { stability: 2, readiness: 2 } },
+      failure: { self: { approval: -1 } },
+    },
+  },
+  {
+    id: 'border-controls',
+    name: 'Tighten Border Controls',
+    category: 'domestic', quick: true,
+    blurb: 'Popular at home, expensive with the neighbours, and it does work in the short run.',
+    cost: { pctGdp: 0.25 }, pc: 1, target: 'none', baseSuccess: 0.8, risk: 'low',
+    skills: [['stability', 0.1]],
+    effects: {
+      success: { self: { unrest: -4, approval: 3, influence: -2 } },
+      failure: { self: { unrest: 2, approval: -2 } },
+    },
+  },
+
+  // ─── More ways to grow ────────────────────────────────────────────────────
+  {
+    id: 'deregulate',
+    name: 'Deregulation Package',
+    category: 'economy',
+    blurb: 'Strip out the permitting and the paperwork. Growth now, grievances later.',
+    cost: { pctGdp: 0.3 }, pc: 3, target: 'none', baseSuccess: 0.7, risk: 'medium',
+    skills: [['stability', 0.14]],
+    effects: {
+      success: {
+        self: { unrest: 3, stability: -1 },
+        modifier: { label: 'Deregulated economy', turns: 8, growth: 0.3 },
+      },
+      failure: { self: { unrest: 5, approval: -4, stability: -2 } },
+    },
+  },
+  {
+    id: 'special-zones',
+    name: 'Special Economic Zones',
+    category: 'economy',
+    blurb: 'Carve out territory with its own rules and let foreign capital in.',
+    cost: { pctGdp: 1.2 }, pc: 2, target: 'none', baseSuccess: 0.72, risk: 'low',
+    skills: [['tech', 0.12], ['influence', 0.1]],
+    effects: {
+      success: {
+        self: { influence: 2, tech: 1 },
+        modifier: { label: 'Special economic zones', turns: 10, growth: 0.24 },
+      },
+      failure: { self: { approval: -2 }, modifier: { label: 'Empty industrial parks', turns: 4, growth: -0.1 } },
+    },
+  },
+  {
+    id: 'labour-markets',
+    name: 'Open the Labour Market',
+    category: 'economy',
+    blurb: 'Let people in to do the work nobody at home will. It grows the economy and the argument.',
+    cost: { pctGdp: 0.4 }, pc: 3, target: 'none', baseSuccess: 0.68, risk: 'medium',
+    skills: [['stability', 0.16]],
+    effects: {
+      success: {
+        self: { unrest: 4, population: 0.6 },
+        modifier: { label: 'Labour inflow', turns: 10, growth: 0.26 },
+      },
+      failure: { self: { unrest: 7, approval: -5 } },
+    },
+  },
+  {
+    id: 'tourism-push',
+    name: 'Open to the World',
+    category: 'economy',
+    blurb: 'Visas, flights, festivals. Modest money, and everyone thinks better of you afterwards.',
+    cost: { pctGdp: 0.5 }, pc: 1, target: 'none', baseSuccess: 0.8, risk: 'low',
+    skills: [['influence', 0.14], ['stability', 0.08]],
+    effects: {
+      success: {
+        self: { influence: 3, approval: 2 },
+        modifier: { label: 'Visitor economy', turns: 8, growth: 0.14 },
+      },
+      failure: { self: { approval: -1 } },
+    },
+  },
+  {
+    id: 'sovereign-fund',
+    name: 'Sovereign Wealth Fund',
+    category: 'economy',
+    blurb: 'Put today\u2019s surplus somewhere it earns. Dull, slow, and it compounds.',
+    cost: { pctGdp: 1.5 }, pc: 2, target: 'none', baseSuccess: 0.76, risk: 'low',
+    skills: [['stability', 0.16], ['tech', 0.06]],
+    effects: {
+      success: { modifier: { label: 'Sovereign fund returns', turns: 12, growth: 0.1, revenue: 6 }, self: { influence: 2 } },
+      failure: { self: { approval: -2 } },
+    },
+  },
+  {
+    id: 'debt-restructure',
+    name: 'Restructure the Debt',
+    category: 'economy',
+    blurb: 'Go to your creditors and reopen the terms. It clears the books and costs you standing.',
+    cost: { pctGdp: 0 }, pc: 4, target: 'none', baseSuccess: 0.6, risk: 'high',
+    skills: [['influence', 0.22], ['stability', 0.14]],
+    effects: {
+      success: {
+        self: { treasuryPctGdp: 3, influence: -4 },
+        modifier: { label: 'Restructured debt', turns: 6, growth: -0.1 },
+      },
+      failure: { self: { influence: -6, approval: -4 }, modifier: { label: 'Failed restructuring', turns: 4, growth: -0.3 } },
+      backfire: {
+        self: { influence: -10, approval: -8, stability: -4 },
+        modifier: { label: 'Locked out of credit markets', turns: 8, growth: -0.5 },
+      },
+    },
+  },
+
+  // ─── War room (only while fighting) ───────────────────────────────────────
+  {
+    id: 'offensive',
+    name: 'Major Offensive',
+    category: 'war',
+    blurb: 'Commit the reserves and push. It moves the front, and it fills the hospitals.',
+    cost: { pctGdp: 1.6 }, pc: 3, target: 'nation', baseSuccess: 0.6, risk: 'high',
+    skills: [['readiness', 0.22], ['military', 0.18]], requiresWar: true,
+    warEffect: { warScore: 16, ownExhaustion: 7, casualties: 40000 },
+    warEffectOnFailure: { warScore: -6, ownExhaustion: 11, casualties: 55000 },
+    effects: {
+      success: { self: { readiness: -4, approval: 4 }, worldTension: 3 },
+      failure: { self: { readiness: -8, approval: -6, unrest: 4 } },
+    },
+  },
+  {
+    id: 'hold-line',
+    name: 'Hold the Line',
+    category: 'war',
+    blurb: 'Dig in, shorten the front, and make them pay for every metre.',
+    cost: { pctGdp: 0.8 }, pc: 1, target: 'nation', baseSuccess: 0.78, risk: 'low',
+    skills: [['readiness', 0.16], ['stability', 0.1]], requiresWar: true,
+    warEffect: { warScore: 5, ownExhaustion: -6, enemyExhaustion: 4, casualties: 12000 },
+    effects: {
+      success: { self: { readiness: 2 } },
+      failure: { self: { readiness: -3, unrest: 2 } },
+    },
+  },
+  {
+    id: 'mobilise',
+    name: 'General Mobilisation',
+    category: 'war',
+    blurb: 'Call up the reserves. You get an army; you also get every family in the country involved.',
+    cost: { pctGdp: 1.4 }, pc: 3, target: 'none', baseSuccess: 0.82, risk: 'medium',
+    skills: [['stability', 0.18]],
+    effects: {
+      success: {
+        self: { military: 5, readiness: 10, unrest: 6, approval: -3 },
+        modifier: { label: 'Mobilised economy', turns: 6, growth: -0.3 },
+        worldTension: 5,
+      },
+      failure: { self: { unrest: 9, approval: -7, readiness: 3 } },
+    },
+  },
+  {
+    id: 'strike-logistics',
+    name: 'Strike Their Logistics',
+    category: 'war',
+    blurb: 'Bridges, depots, rail junctions. Unglamorous, and it decides more battles than anything else.',
+    cost: { pctGdp: 0.9 }, pc: 2, target: 'nation', baseSuccess: 0.64, risk: 'medium',
+    skills: [['tech', 0.2], ['readiness', 0.14]], requiresWar: true,
+    warEffect: { warScore: 9, enemyExhaustion: 8, casualties: 8000 },
+    effects: {
+      success: { target: { readiness: -6 }, targetModifier: { label: 'Broken supply lines', turns: 4, growth: -0.25 } },
+      failure: { self: { readiness: -3 }, worldTension: 2 },
+    },
+  },
+  {
+    id: 'war-economy',
+    name: 'Total War Economy',
+    category: 'war',
+    blurb: 'Convert the civilian industry. Everything is for the front now, including the shortages.',
+    cost: { pctGdp: 0.6 }, pc: 4, target: 'none', baseSuccess: 0.7, risk: 'medium',
+    skills: [['stability', 0.2], ['tech', 0.1]],
+    effects: {
+      success: {
+        self: { military: 4, readiness: 5, unrest: 5 },
+        modifier: { label: 'War economy', turns: 10, growth: -0.45, readiness: 0.6 },
+      },
+      failure: { self: { unrest: 8, approval: -6 }, modifier: { label: 'Botched conversion', turns: 4, growth: -0.5 } },
+    },
+  },
 ];
 
 export const ACTIONS_BY_ID = Object.fromEntries(ACTIONS.map((a) => [a.id, a]));
 
 /** Money cost in billions USD for a given nation. */
+/** The Quick tab is a view across categories, not a category of its own. */
+export function actionsInCategory(categoryId) {
+  if (categoryId === 'quick') return ACTIONS.filter((a) => a.quick);
+  return ACTIONS.filter((a) => a.category === categoryId);
+}
+
 export function actionCost(action, nationState) {
   const pct = action.cost?.pctGdp || 0;
   const flat = action.cost?.flat || 0;
@@ -522,9 +777,10 @@ export function actionCost(action, nationState) {
 export function actionAvailability(game, action, targetId = null) {
   const state = game.nations[game.playerId];
   const cost = actionCost(action, state);
+  const funds = availableFunds(state);
 
-  if (cost > state.treasury) {
-    return { ok: false, reason: `Treasury short by $${Math.round(cost - state.treasury)}B` };
+  if (cost > funds) {
+    return { ok: false, reason: `Beyond your credit line by $${Math.round(cost - funds)}B` };
   }
   if (action.pc > game.politicalCapital) {
     return { ok: false, reason: `Needs ${action.pc} political capital` };

@@ -214,6 +214,8 @@ export function createGame({
     relations: buildRelations(rng, knobs.scrambleRelations),
     wars: [],
     treaties: [],
+    // Per-pair escalation ladders, keyed like relations.
+    escalation: {},
     log: [],
     headlines: [],
     turnReports: [],
