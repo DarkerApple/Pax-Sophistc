@@ -1,0 +1,23 @@
+{
+  "name": "pax-sophistc",
+  "version": "0.1.0",
+  "description": "An AI-driven geopolitical strategy game set in the current world. Pick any country, set the difficulty, play with free AI APIs.",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "start": "node scripts/serve.js",
+    "dev": "node scripts/serve.js",
+    "test": "node --test \"tests/**/*.test.js\""
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "game",
+    "strategy",
+    "geopolitics",
+    "llm",
+    "simulation"
+  ],
+  "license": "MIT"
+}
