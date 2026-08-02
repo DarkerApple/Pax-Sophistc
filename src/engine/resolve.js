@@ -7,6 +7,8 @@ import { applyEffect, describeChanges, scaleEffect } from './effects.js';
 import { clamp, getRelation, logEvent } from './state.js';
 import { annexOccupied, concludeWar, declareWar, findWar, pressWar } from './war.js';
 import { realign } from './statecraft.js';
+import { chargeExit, noteAccession, open as openCommitment } from './commitments.js';
+import { hardenAgainst } from './intel.js';
 
 /** The first war this country is fighting, for orders that need no target. */
 function activeWarFor(game, id) {
@@ -248,6 +250,12 @@ export function resolveAction(game, rng, mods, order, actorId = game.playerId) {
     const done = realign(game, actorId, action.alignment.blocId, action.alignment.join, rng);
     if (done) {
       outcome.realignment = done;
+      // Accession starts a clock; walking out before it runs down is charged
+      // for, in standing and in every relationship inside the bloc.
+      if (actorId === game.playerId) {
+        if (action.alignment.join) noteAccession(game, action.alignment.blocId);
+        else outcome.exitCost = chargeExit(game, action.alignment.blocId);
+      }
       outcome.notes.push(
         action.alignment.join
           ? `${NATIONS_BY_ID[actorId]?.name || actorId} is a member as of this quarter.`
@@ -267,6 +275,23 @@ export function resolveAction(game, rng, mods, order, actorId = game.playerId) {
       outcome.notes.push(`Pressure applied to both sides of the ${war.name}.`);
       if (actorId === game.playerId) game.stats.crisesResolved += 1;
     }
+  }
+
+  // Some programmes are a signature rather than a payment: they draw money
+  // every quarter until they finish, and cost more to cancel than to complete.
+  if (succeeded && actorId === game.playerId) {
+    const commitment = openCommitment(game, action, cost);
+    if (commitment) {
+      outcome.commitment = { label: commitment.label, quarterly: commitment.quarterly, turns: commitment.turnsLeft };
+      outcome.notes.push(
+        `${commitment.label}: $${commitment.quarterly.toLocaleString()}B a quarter for ${commitment.turnsLeft} more quarters.`,
+      );
+    }
+  }
+
+  // Counter-intelligence work makes you harder for that country to read.
+  if (succeeded && action.id === 'counter-intel' && targetId) {
+    hardenAgainst(game, targetId, 0.3);
   }
 
   outcome.text = describeOutcome(game, outcome, action);

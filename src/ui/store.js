@@ -3,6 +3,7 @@
 
 import { defaultAiConfig } from '../ai/providers.js';
 import { deserialize, serialize } from '../engine/state.js';
+import { ensureTerm } from '../engine/lifecycle.js';
 
 const SAVE_KEY = 'pax-sophistc:save';
 const CONFIG_KEY = 'pax-sophistc:ai';
@@ -65,7 +66,9 @@ export function loadGame() {
   const raw = localStorage.getItem(SAVE_KEY);
   if (!raw) return null;
   try {
-    return deserialize(raw);
+    // A save written before factions, constitutions and mandates existed comes
+    // up complete rather than half-initialised.
+    return ensureTerm(deserialize(raw));
   } catch {
     return null;
   }
@@ -96,7 +99,7 @@ export function importGame(file) {
     const reader = new FileReader();
     reader.onload = () => {
       try {
-        resolve(deserialize(String(reader.result)));
+        resolve(ensureTerm(deserialize(String(reader.result))));
       } catch (err) {
         reject(err);
       }

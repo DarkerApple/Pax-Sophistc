@@ -953,11 +953,11 @@ textarea.input { resize: vertical; font-family: inherit; }
 
 /* ── The books, on the dashboard ───────────────────────────────────────────── */
 
-.ledger { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.4rem; margin-bottom: 0.7rem; }
+.ledger { display: grid; grid-template-columns: repeat(auto-fit, minmax(5.4rem, 1fr)); gap: 0.4rem; margin-bottom: 0.7rem; }
 .ledger__cell { background: var(--bg-2); border-radius: var(--radius-sm); padding: 0.4rem 0.5rem; min-width: 0; }
 .ledger__label { display: block; font-size: 0.6rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted-2); }
 .ledger__value {
-  display: block; font-family: var(--mono); font-size: 0.84rem; font-weight: 600;
+  display: block; font-family: var(--mono); font-size: 0.8rem; font-weight: 600;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .ledger__context { display: block; font-size: 0.65rem; color: var(--muted-2); }
@@ -1370,3 +1370,146 @@ kbd {
   vector-effect: non-scaling-stroke;
 }
 .action__tag--why { border-color: var(--accent); color: var(--accent); }
+
+/* ── The four creditors ───────────────────────────────────────────────────── */
+
+.factions { display: flex; flex-direction: column; gap: 0.55rem; }
+.faction { background: var(--bg-2); border-radius: var(--radius-sm); padding: 0.45rem 0.55rem; border-left: 3px solid transparent; }
+.faction.is-devoted { border-left-color: var(--good); }
+.faction.is-supportive { border-left-color: var(--ok); }
+.faction.is-watchful { border-left-color: var(--muted-2); }
+.faction.is-restive { border-left-color: var(--warn); }
+.faction.is-hostile { border-left-color: var(--bad); }
+.faction__head { display: flex; justify-content: space-between; align-items: baseline; gap: 0.4rem; }
+.faction__name { font-size: 0.83rem; font-weight: 600; }
+.faction__band { font-size: 0.7rem; color: var(--muted-2); }
+.faction__foot { display: flex; justify-content: space-between; gap: 0.4rem; margin-top: 0.25rem; align-items: baseline; }
+.faction__contrib { font-family: var(--mono); font-size: 0.7rem; flex: 0 0 auto; }
+.faction__contrib.is-up { color: var(--good); }
+.faction__contrib.is-down { color: var(--bad); }
+.faction__demand { font-size: 0.72rem; color: var(--muted); text-align: right; }
+.faction__due { font-family: var(--mono); color: var(--warn); }
+.faction__quiet { font-size: 0.72rem; color: var(--muted-2); }
+
+/* Faction chips on an order card: who wants it, who will hold it against you. */
+.action__tag--likes { border-color: color-mix(in srgb, var(--good) 55%, var(--line)); color: var(--good); }
+.action__tag--dislikes { border-color: color-mix(in srgb, var(--bad) 55%, var(--line)); color: var(--bad); }
+
+/* ── The standing problem ─────────────────────────────────────────────────── */
+
+.panel--nemesis { border-color: color-mix(in srgb, var(--bad) 35%, var(--line)); }
+.nemesis__head {
+  display: flex; align-items: center; gap: 0.6rem; width: 100%;
+  background: none; border: none; padding: 0.2rem 0; cursor: pointer; color: inherit; text-align: left;
+}
+.nemesis__flag { font-size: 1.6rem; }
+.nemesis__name { font-size: 1rem; font-weight: 600; font-family: var(--display); }
+.nemesis__since { font-size: 0.72rem; color: var(--muted-2); }
+.nemesis__rows { display: flex; flex-direction: column; gap: 0.15rem; margin: 0.5rem 0; }
+.nemesis__row { display: flex; justify-content: space-between; font-size: 0.8rem; }
+.nemesis__row span:last-child { font-family: var(--mono); }
+.grievances { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.1rem; }
+.grievance { display: flex; justify-content: space-between; gap: 0.5rem; font-size: 0.76rem; color: var(--muted); }
+.grievance__when { font-family: var(--mono); font-size: 0.7rem; color: var(--muted-2); flex: 0 0 auto; }
+
+/* ── Intelligence ─────────────────────────────────────────────────────────── */
+
+.intel { background: var(--bg-2); border-radius: var(--radius-sm); padding: 0.4rem 0.5rem; margin-bottom: 0.5rem; }
+.intel__head { display: flex; justify-content: space-between; align-items: baseline; }
+.intel__label { font-size: 0.66rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted-2); }
+.intel__band { font-size: 0.72rem; color: var(--muted); }
+.intel__balance { font-size: 0.74rem; color: var(--muted); margin-top: 0.25rem; font-family: var(--mono); }
+.intel.is-dark .intel__band, .intel.is-thin .intel__band { color: var(--warn); }
+
+/* ── The office ───────────────────────────────────────────────────────────── */
+
+.clauses { display: flex; flex-direction: column; gap: 0.15rem; margin-bottom: 0.5rem; }
+.clause { display: flex; justify-content: space-between; gap: 0.5rem; font-size: 0.78rem; }
+.clause__name { color: var(--muted-2); }
+.clause__value { font-family: var(--mono); font-size: 0.74rem; }
+.clause__value.is-amended { color: var(--accent); }
+
+.commitment { display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; background: var(--bg-2); border-radius: var(--radius-sm); padding: 0.4rem 0.5rem; margin-bottom: 0.25rem; }
+.commitment__label { font-size: 0.8rem; font-weight: 600; }
+.commitment__meta { font-size: 0.68rem; color: var(--muted-2); font-family: var(--mono); }
+.commitment__total { font-size: 0.74rem; color: var(--muted); margin-top: 0.25rem; }
+
+.election { margin: 0.5rem 0 0.75rem; }
+.election__head { display: flex; align-items: baseline; gap: 0.5rem; }
+.election__share { font-family: var(--mono); font-size: 1.5rem; font-weight: 700; }
+.election__band { font-size: 0.8rem; }
+.election__band.is-safe, .election__band.is-likely { color: var(--good); }
+.election__band.is-knife { color: var(--warn); }
+.election__band.is-behind, .election__band.is-lost { color: var(--bad); }
+.election__reasons { display: flex; flex-wrap: wrap; gap: 0.25rem; margin-top: 0.35rem; }
+.election__reason { font-size: 0.7rem; font-family: var(--mono); border: 1px solid var(--line); border-radius: 999px; padding: 0.05rem 0.45rem; color: var(--muted); }
+.election__reason.is-up { border-color: color-mix(in srgb, var(--good) 45%, var(--line)); }
+.election__reason.is-down { border-color: color-mix(in srgb, var(--bad) 45%, var(--line)); }
+
+/* ── The private ambition ─────────────────────────────────────────────────── */
+
+.ambition { margin-top: 0.7rem; padding: 0.5rem 0.6rem; border: 1px dashed var(--line); border-radius: var(--radius-sm); }
+.ambition.is-met { border-color: var(--good); }
+.ambition__label { font-size: 0.62rem; letter-spacing: 0.09em; text-transform: uppercase; color: var(--muted-2); }
+.ambition__title { font-size: 0.9rem; font-weight: 600; font-family: var(--display); }
+.ambition__detail { font-size: 0.76rem; color: var(--muted); }
+.ambition__state { font-size: 0.72rem; color: var(--muted-2); margin-top: 0.2rem; }
+.objective__origin { font-size: 0.6rem; letter-spacing: 0.07em; text-transform: uppercase; color: var(--accent); margin-left: 0.35rem; }
+
+/* ── The amendment desk ───────────────────────────────────────────────────── */
+
+.amendments { display: grid; grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr)); gap: 0.5rem; }
+.amendment { text-align: left; background: var(--bg-2); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 0.5rem 0.6rem; cursor: pointer; color: var(--ink); }
+.amendment:hover:not(:disabled) { border-color: var(--accent); }
+.amendment:disabled { opacity: 0.45; cursor: not-allowed; }
+.amendment__head { display: flex; justify-content: space-between; gap: 0.4rem; align-items: baseline; }
+.amendment__label { font-weight: 600; font-size: 0.82rem; }
+.amendment__cost { font-family: var(--mono); font-size: 0.72rem; color: var(--muted-2); }
+.amendment__note { font-size: 0.72rem; color: var(--muted); margin: 0.2rem 0; }
+.amendment__backlash { font-size: 0.68rem; color: var(--warn); }
+.amendment__backlash.is-good { color: var(--good); }
+
+/* ── The congress floor ───────────────────────────────────────────────────── */
+
+.modal__panel--wide { max-width: 56rem; }
+.btn--congress { border-color: var(--accent); color: var(--accent); }
+.clausecard { background: var(--bg-2); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 0.6rem 0.7rem; margin-bottom: 0.6rem; }
+.clausecard.is-passing { border-color: color-mix(in srgb, var(--good) 50%, var(--line)); }
+.clausecard__head { display: flex; justify-content: space-between; gap: 0.5rem; align-items: baseline; }
+.clausecard__title { font-weight: 600; font-size: 0.92rem; font-family: var(--display); }
+.clausecard__share { font-family: var(--mono); font-size: 1rem; }
+.clausecard__detail { font-size: 0.8rem; color: var(--muted); margin: 0.2rem 0 0.4rem; }
+.clausecard__meta { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; font-size: 0.7rem; color: var(--muted-2); font-family: var(--mono); margin-top: 0.35rem; }
+.clausecard__lobby { display: flex; flex-wrap: wrap; gap: 0.3rem; align-items: center; margin-top: 0.4rem; }
+.clausecard__lobbyLabel { font-size: 0.72rem; color: var(--muted-2); }
+
+/* ── The closing page ─────────────────────────────────────────────────────── */
+
+.chronicle { padding-top: 0.5rem; }
+.chronicle__title { font-family: var(--display); font-size: 1.35rem; margin-bottom: 0.1rem; }
+.chronicle__era { font-size: 0.72rem; letter-spacing: 0.09em; text-transform: uppercase; color: var(--muted-2); margin-bottom: 0.8rem; }
+.chronicle__para { font-size: 0.92rem; line-height: 1.65; margin-bottom: 0.7rem; }
+.chronicle__ledger { display: grid; grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr)); gap: 0.15rem 1rem; margin: 0.9rem 0; }
+.chronicle__row { display: flex; justify-content: space-between; gap: 0.5rem; font-size: 0.78rem; border-bottom: 1px dotted var(--line); padding: 0.12rem 0; }
+.chronicle__row span:last-child { font-family: var(--mono); }
+.chronicle__epitaph { font-family: var(--display); font-size: 1.05rem; border-left: 3px solid var(--accent); padding-left: 0.8rem; margin: 0.9rem 0; color: var(--ink); }
+.chronicle__seed { font-family: var(--mono); font-size: 0.72rem; color: var(--muted-2); }
+
+.bonuses { display: flex; gap: 0.4rem; flex-wrap: wrap; margin: 0.5rem 0; }
+.bonus { font-size: 0.72rem; font-family: var(--mono); border: 1px solid var(--good); color: var(--good); border-radius: 999px; padding: 0.1rem 0.5rem; }
+
+.reveals { display: flex; flex-direction: column; gap: 0.15rem; }
+.reveal { display: grid; grid-template-columns: 1.4rem minmax(5rem, 1fr) 2fr 1.2rem; gap: 0.4rem; align-items: center; font-size: 0.8rem; padding: 0.12rem 0; }
+.reveal__what { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.reveal__mark { text-align: right; color: var(--muted-2); }
+.reveal.is-met .reveal__mark { color: var(--good); }
+.reveal.is-met .reveal__what { color: var(--ink); }
+
+.row--tight { gap: 0.4rem; margin-bottom: 0.6rem; }
+
+@media (max-width: 700px) {
+  .amendments { grid-template-columns: 1fr; }
+  .reveal { grid-template-columns: 1.4rem 1fr 1.2rem; }
+  .reveal__what { grid-column: 1 / -1; }
+  .chronicle__ledger { grid-template-columns: 1fr; }
+}

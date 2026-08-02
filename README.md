@@ -143,8 +143,110 @@ and its direction), and **how the world sees it** (influence, power rank as a sh
 leading power, friendly and hostile states, how threatening it looks, its blocs and its
 sanctions) — plus trend lines for GDP, military and stability across the whole run.
 
-At the end of your term you are graded across five components against the mandate you were
-given on day one.
+## Why quarter thirty is not quarter six
+
+The engine underneath is the same every turn. What changes is the politics on top of it.
+
+### Four creditors, not a currency
+
+Political capital is not refilled by arithmetic — it is **lent to you** by the general
+staff, capital, the street and your own party, and they disagree about everything. Every
+one of the 302 orders is read by all four, and **the reading comes from the order's own
+shape**: what it costs, what it moves, whether it is covert, whether it starts a war. A
+rearmament programme thrills the staff, takes money capital wanted, and conscripts people
+the street will miss. Each order card names the faction that wants it and the faction that
+will hold it against you.
+
+Each faction also carries a **standing demand with a deadline** — *"readiness above 70 and
+keep it there"*, *"bring unrest under 35"*, *"no more backfires; every one of them is our
+seat"*. Meet it and they warm to you. Miss it and they do not. Let one fall far enough and
+it withdraws consent in its own way: the officer corps stops taking your calls, money
+leaves the country, the unions call a general strike, or your own side tables a leadership
+challenge.
+
+### One antagonist, with a file
+
+When one country has been trading blows with you for long enough, it stops being one
+relationship among fifty-five and becomes **the** one. It gets a name your government uses
+for it — *the Twenty-Year Problem*, *the Long Winter* — and a dossier that persists across
+quarters and terms and **remembers the specific orders on both sides**. It spends its
+quarters on you rather than on whoever else is convenient, and it is markedly more likely
+to go to war with you than with anybody else. Let it cool and it lapses; settle it and the
+run says so.
+
+### You do not know what they have
+
+Foreign statistics arrive as **a band, not a number** — `56–74`, `0.84× to 1.03×` — and
+narrow only as far as your intelligence reaches. Espionage, cyber operations, a source
+inside their command and a defector pipeline all buy you a look; sources go cold on their
+own; counter-intelligence makes you harder to read. The simulation is never fogged, only
+the reading is, which means **you can commit to a war on a ratio your services got wrong**.
+
+### A brief that moves
+
+The mandate is **rewritten every two years from what has actually happened**. A war on your
+border turns "grow the economy" into "keep the neighbourhood standing"; a negative treasury
+writes "get the books straight"; a rivalry writes "settle the question of ——". Objectives
+the world has made irrelevant are struck rather than left to fail, banked ones become
+achievements, and the panel says when the next review is due. You are also dealt a **private
+ambition** nobody else is told about, worth points at the end.
+
+### Choices you cannot take back
+
+Sixteen of the big programmes are **commitments, not payments**: they draw money every
+quarter for years and cost more to cancel than to complete, with the break fee shown from
+the day you sign. Acceding to a bloc starts a clock, and walking out before it runs down is
+charged for in standing and in every relationship inside it. And you get **one
+constitutional amendment per term**.
+
+### The constitution you inherited
+
+Every country carries five clauses that gate what the office may actually do — **term
+limits, war powers, emergency powers, treaty ratification, and the press**. They follow
+from what kind of state it is: a one-party state has no term limit and may rule by decree;
+a parliamentary republic has three terms, needs its own side behind a declaration of war,
+and cannot suspend normal government at any price. These are not flavour. A blocked order
+is blocked at the point of ordering, with the clause named.
+
+One amendment per term is the only way to widen them. Removing your own term limit is the
+obvious use of it — and the country reads it for exactly what it is, in unrest, in approval
+and in all four factions at once.
+
+### Terms, not sessions
+
+**The country is the save; a term is a chapter of it.** A term ends in an election rather
+than a full stop: approval carries it, your party turns it out, the streets bleed it, and
+the record you are running on counts for something. Win, and the next term inherits
+everything — the debt, the half-built programmes, the treaties, the borders, the rivalry,
+the constitution you amended — and gets a fresh brief and four creditors who remember some
+of what you did to them. Lose, and the country goes on without you. The hand-off screen
+says exactly what carries over.
+
+The world a run ends in can also be exported as the roster for the next era, so a campaign
+is the same engine run twice with the second world written by the first.
+
+### A final act
+
+In the closing year a **world congress** convenes and the assembled governments vote on how
+the next order is written: freeze the borders where they stand, ban a class of weapon,
+recognise a bloc as legitimate, divide the world into spheres, bind everybody to open trade
+or to collective security. **Voting weight is what forty quarters of play produced** — power
+share, standing, bloc membership, and how much the room has decided you are the problem. You
+may put one clause on the paper and hold three meetings, and your leverage in those meetings
+is the mandate you are running on. Quiet diplomacy that never paid out now pays out in one
+session.
+
+### How history remembers you
+
+The run closes on a **page from a textbook that does not exist**, assembled from the run's
+own event log: what the economy did, which wars were fought and who chose them, which
+states appeared and which stopped existing — **named** — the rivalry that defined the
+decade, the settlement that closed it, and a one-line epitaph. Everybody's private ambition
+is revealed alongside it, and the seed is printed at the bottom so anybody can replay the
+same decade.
+
+At the end of your term you are graded across five components against the mandate as it
+stands, plus your private ambition and how the settlement went.
 
 ## World modes
 
@@ -434,6 +536,16 @@ src/
     difficulty.js     the slider → every knob in the simulation
     worldmodes.js     Stable / Current / Chaotic, composed with difficulty
     consequences.js   escalation ladders and chain reactions
+    factions.js       the four creditors of political capital
+    nemesis.js        the rivalry, and the file behind it
+    intel.js          what you actually know about somebody else
+    mandate.js        the brief, and how history rewrites it
+    constitution.js   the rules of the office, and the one amendment
+    lifecycle.js      opening a term, closing one, and standing again
+    commitments.js    programmes and treaties you cannot simply stop
+    congress.js       the closing session and how the room votes
+    ambitions.js      what every government privately wanted
+    chronicle.js      the page a textbook writes from the run
     territory.js      the land grid, the outlines traced out of it, and the front
     coalitions.js     threat, balancing coalitions, and containment
     quickorders.js    the situational quick catalogue
@@ -468,8 +580,8 @@ src/
     setup.js          new-game screen
     game.js           command screen: dashboard, inspector, feed, planner
     dom.js, store.js  helpers and persistence
-tests/                engine, orders, territory, coalitions, worldview, AI-boundary,
-                      world and translation tests
+tests/                engine, orders, politics, endgame, territory, coalitions,
+                      worldview, AI-boundary, world and translation tests
 ```
 
 The simulation (`src/engine/`, `src/data/`) has no DOM dependency and runs under plain Node,

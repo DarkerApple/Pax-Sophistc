@@ -14,6 +14,7 @@ import { neighboursOf } from './territory.js';
 import { threatOf } from './coalitions.js';
 import { QUICK_ORDERS } from './quickorders.js';
 import { PROGRAMMES } from './programmes.js';
+import { permits } from './constitution.js';
 
 export const CATEGORIES = [
   { id: 'quick', name: 'Quick', icon: '⚡', synthetic: true },
@@ -1395,6 +1396,11 @@ export function actionAvailability(game, action, targetId = null) {
   }
   if (action.target === 'nation' && !targetId) {
     return { ok: false, reason: 'Choose a target country' };
+  }
+  // The constitution you inherited says what this office may do at all.
+  const allowed = permits(game, action);
+  if (!allowed.ok) {
+    return { ok: false, reason: allowed.reason, clauseId: allowed.clauseId };
   }
   if (action.available && !action.available(game)) {
     return { ok: false, reason: action.alignment?.join

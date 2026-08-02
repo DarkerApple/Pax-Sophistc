@@ -3,6 +3,7 @@
 import { BLOCS, NATIONS_BY_ID } from '../data/nations.js';
 import {
   ACTIONS,
+  ACTIONS_BY_ID as ACTIONS_BY_ID_UI,
   CATEGORIES,
   actionAvailability,
   actionCost,
@@ -51,6 +52,28 @@ import { availableFunds, creditLimit, debtOf, describeFinances } from '../engine
 import { gameModifiers } from '../engine/worldmodes.js';
 import { h, money, mount, relationColour, relationLabel, sparkline, statColour } from './dom.js';
 import { threatOf } from '../engine/coalitions.js';
+import {
+  FACTIONS,
+  poles,
+  politicalCapitalFrom,
+  snapshotStandings,
+  standingBand,
+} from '../engine/factions.js';
+import { dossierOn, nemesisReport } from '../engine/nemesis.js';
+import { confidenceBand, estimate, estimatedBalance, intelOn } from '../engine/intel.js';
+import { REVIEW_EVERY, liveObjectives, nextReviewTurn } from '../engine/mandate.js';
+import {
+  amend,
+  amendmentOptions,
+  amendmentsLeft,
+  describeConstitution,
+  electionBand,
+} from '../engine/constitution.js';
+import { breakCost, cancel, commitmentsOf, committedSpend } from '../engine/commitments.js';
+import { CLAUSE_TYPES, congressOf, lobby, propose, tally } from '../engine/congress.js';
+import { ambitionProgress, revealAmbitions } from '../engine/ambitions.js';
+import { chronicle, chronicleText } from '../engine/chronicle.js';
+import { concludeTerm, electionState, inheritance } from '../engine/lifecycle.js';
 import { MAP_FOCUSES, VIEW_MODES, WorldMap, alignmentOf, legendFor } from './map.js';
 import { KEY_GROUPS, groupLabel, keyLabel, keybindsIn } from './keys.js';
 import { LANGUAGES, currentLanguage, t, tAction, tLabel, tModifier, tNation } from '../i18n/index.js';
@@ -68,6 +91,17 @@ const STAT_ROWS = [
   labelOf: () => t(`stat.${row.key}`, row.label),
   hintOf: () => t(`stat.${row.key}Hint`, row.hint),
 }));
+
+/** Short names for the four factions, for the two chips on every order card. */
+const SHORT_FACTION = {
+  staff: 'staff', capital: 'capital', street: 'street', party: 'party',
+};
+
+/** An action name that may only exist in a grievance file as free text. */
+function tActionName(label, actionId) {
+  const action = actionId ? ACTIONS_BY_ID_UI[actionId] : null;
+  return action ? tAction(action) : label;
+}
 
 const STAT_LABELS = {
   military: 'Military', readiness: 'Readiness', tech: 'Tech', stability: 'Stability',
@@ -155,6 +189,12 @@ export class GameScreen {
     this.helpOpen = false;
     // Which face of the world panel is showing, and which league table.
     this.worldTab = 'alignments';
+    // The amendment desk and the congress floor are both modal and both opened
+    // deliberately; the closing page is opened for you.
+    this.amendOpen = false;
+    this.congressOpen = false;
+    this.endTab = 'verdict';
+    this.standingAgain = null;
     this.rankMetric = 'power';
     // Which pane a phone is showing. Ignored above the breakpoint, where all
     // three columns are on screen at once.
@@ -190,7 +230,9 @@ export class GameScreen {
         // all three columns are visible together.
         h('div.game__body', { dataset: { pane: this.pane } },
           h('div.col.col--left', { dataset: { scroll: 'left', pane: 'nation' } },
-            this.#dashboard(), this.#inspector(), this.#escalation(), this.#objectives(), this.#relations()),
+            this.#dashboard(), this.#factionsPanel(), this.#nemesisPanel(),
+            this.#inspector(), this.#escalation(), this.#objectives(),
+            this.#government(), this.#relations()),
           h('div.col.col--centre', { dataset: { scroll: 'centre' } },
             h('div.pane', { dataset: { pane: 'map' } }, this.#mapPanel()),
             h('div.pane', { dataset: { pane: 'world' } }, this.#worldPanel()),
@@ -201,6 +243,8 @@ export class GameScreen {
         this.#actionBar(),
       ),
       this.detailNationId ? this.#nationDetail() : null,
+      this.amendOpen ? this.#amendModal() : null,
+      this.congressOpen ? this.#congressModal() : null,
       game.pendingDecision && !this.decisionChoice ? this.#decisionModal() : null,
       this.helpOpen ? this.#helpModal() : null,
       game.status !== 'active' ? this.#endgameModal() : null,
@@ -518,16 +562,20 @@ export class GameScreen {
             `${relationLabel(relation)} · relation ${Math.round(relation)}`),
       atWar ? h('div.inspector__relation', { style: { color: 'var(--st-critical)' } }, t('inspector.atWar', '⚔ At war')) : null,
       h('p.inspector__brief', tNation(def, 'brief')),
+      // Foreign figures are what your services believe, not what is true. A
+      // country you have never looked at reads as a band; one you have an
+      // agent inside reads as a number.
+      isPlayer ? null : this.#intelLine(id),
       h('div.inspector__grid',
-        row(t('stat.gdp', 'GDP'), `$${state.gdp.toFixed(2)}T`, `${formatPerCapita(state)}/head`),
+        row(t('stat.gdp', 'GDP'), fog(game, id, 'gdp', isPlayer), `${formatPerCapita(state)}/head`),
         row(t('stat.people', 'People'), `${Math.round(state.population)}M`,
           rankLabel(game, rankOf(game, id, (s) => s.population))),
-        row(t('stat.military', 'Military'), Math.round(state.military), bandOf('military', state.military)),
-        row(t('stat.readiness', 'Readiness'), Math.round(state.readiness), bandOf('readiness', state.readiness)),
-        row(t('stat.tech', 'Technology'), Math.round(state.tech), bandOf('tech', state.tech)),
-        row(t('stat.stability', 'Stability'), Math.round(state.stability), bandOf('stability', state.stability)),
-        row(t('stat.unrest', 'Unrest'), Math.round(state.unrest), bandOf('unrest', state.unrest)),
-        row(t('stat.influence', 'Influence'), Math.round(state.influence), bandOf('influence', state.influence)),
+        row(t('stat.military', 'Military'), fog(game, id, 'military', isPlayer), bandOf('military', state.military)),
+        row(t('stat.readiness', 'Readiness'), fog(game, id, 'readiness', isPlayer), bandOf('readiness', state.readiness)),
+        row(t('stat.tech', 'Technology'), fog(game, id, 'tech', isPlayer), bandOf('tech', state.tech)),
+        row(t('stat.stability', 'Stability'), fog(game, id, 'stability', isPlayer), bandOf('stability', state.stability)),
+        row(t('stat.unrest', 'Unrest'), fog(game, id, 'unrest', isPlayer), bandOf('unrest', state.unrest)),
+        row(t('stat.influence', 'Influence'), fog(game, id, 'influence', isPlayer), bandOf('influence', state.influence)),
         row(t('stat.nukes', 'Warheads'), state.nukes || '—',
           state.nukes ? rankLabel(game, rankOf(game, id, (s) => s.nukes)) : ''),
         landRow(game, id),
@@ -539,6 +587,14 @@ export class GameScreen {
         isPlayer ? null : h('button.btn.btn--sm', { onclick: () => this.#openDetail(id) }, t('inspector.openFile', 'Open full file')),
       ),
     );
+
+    // Your own figures are your own; everyone else's are an estimate whose
+    // width is set by how much intelligence you have on them.
+    function fog(g, nationId, key, mine) {
+      if (mine) return String(Math.round(g.nations[nationId][key]));
+      const reading = estimate(g, nationId, key, { max: key === 'gdp' ? 40 : 100 });
+      return reading.text;
+    }
 
     function row(label, value, context) {
       return h('div.inspector__row',
@@ -565,6 +621,26 @@ export class GameScreen {
             }),
       );
     }
+  }
+
+  /** How well your services can actually see this country. */
+  #intelLine(id) {
+    const game = this.game;
+    const confidence = intelOn(game, id);
+    const band = confidenceBand(confidence);
+    const balance = estimatedBalance(game, id);
+    return h('div.intel', { class: `intel is-${band.id}`,
+      title: t('intel.hint',
+        'Foreign figures are what your services believe. Espionage, cyber operations and a source inside their command all narrow the estimate; it goes stale on its own.') },
+      h('div.intel__head',
+        h('span.intel__label', t('intel.coverage', 'Intelligence')),
+        h('span.intel__band', t(`intel.${band.id}`, band.label)),
+      ),
+      h('div.stat__track',
+        h('div.stat__fill', { style: { width: `${confidence * 100}%`, background: statColour(confidence * 100) } })),
+      h('div.intel__balance',
+        t('intel.balance', 'Their forces against yours: {n}', { n: balance.text })),
+    );
   }
 
   /** What is left of a country somebody else now administers. */
@@ -600,6 +676,228 @@ export class GameScreen {
             }, t('inspector.unpin', 'Unpin'))
           : null,
       ),
+    );
+  }
+
+  /**
+   * The four creditors of your political capital.
+   *
+   * This is the panel that gives every order a second axis: the number at the
+   * top of the screen is no longer refilled by arithmetic, it is lent to you by
+   * four groups who read everything you do and disagree about all of it.
+   */
+  #factionsPanel() {
+    const game = this.game;
+    const mods = gameModifiers(game);
+    const standings = snapshotStandings(game);
+    const capital = politicalCapitalFrom(game, mods);
+
+    return h('section.panel',
+      h('div.panel__titlebar',
+        h('h2.panel__title', t('panel.factions', 'Who is lending you the votes')),
+        h('span.badge', t('factions.pcNext', '{n} next quarter', { n: capital.total })),
+      ),
+      h('div.factions',
+        standings.map((entry) => {
+          const spec = FACTIONS.find((f) => f.id === entry.id);
+          const source = capital.sources.find((s) => s.id === entry.id);
+          return h('div.faction', { class: `faction is-${entry.band.id}`, title: t(`faction.${entry.id}Blurb`, spec.blurb) },
+            h('div.faction__head',
+              h('span.faction__name', t(`faction.${entry.id}`, spec.name)),
+              h('span.faction__band', t(`standing.${entry.band.id}`, entry.band.label)),
+            ),
+            h('div.stat__track',
+              h('div.stat__fill', {
+                style: { width: `${entry.mood}%`, background: statColour(entry.mood) },
+              }),
+            ),
+            h('div.faction__foot',
+              h('span.faction__contrib', {
+                class: `faction__contrib ${(source?.value ?? 0) >= 0 ? 'is-up' : 'is-down'}`,
+                title: t('factions.contribHint', 'What they contribute to next quarter’s political capital'),
+              }, `${(source?.value ?? 0) >= 0 ? '+' : '−'}${Math.abs(source?.value ?? 0).toFixed(1)} PC`),
+              entry.demand
+                ? h('span.faction__demand', {
+                    title: t('factions.demandHint', 'Meet it and they warm to you. Miss the deadline and they do not.'),
+                  },
+                    `“${t(`demand.${entry.id}.${entry.demand.id}`, entry.demand.text)}” `,
+                    h('span.faction__due', t('factions.due', '{n}q', { n: Math.max(0, entry.demand.dueTurn - game.turn) })),
+                  )
+                : h('span.faction__quiet', t('factions.quiet', 'asking for nothing')),
+            ),
+          );
+        }),
+      ),
+      h('p.panel__note',
+        t('factions.note',
+          'Every order you issue is read by all four. The one that wanted it and the one that did not are named on each card.')),
+    );
+  }
+
+  /** The rivalry, if one has been promoted. */
+  #nemesisPanel() {
+    const report = nemesisReport(this.game);
+    if (!report) return null;
+    const game = this.game;
+
+    return h('section.panel.panel--nemesis',
+      h('div.panel__titlebar',
+        h('h2.panel__title', t('panel.nemesis', 'The standing problem')),
+        h('span.badge.badge--warn', t(`codename.${report.codename}`, report.codename)),
+      ),
+      h('button.nemesis__head', {
+        onclick: () => this.#openDetail(report.id),
+        onpointerenter: () => this.#onMapHover(report.id),
+        onpointerleave: () => this.#onMapHover(null),
+      },
+        h('span.nemesis__flag', report.def.flag),
+        h('div',
+          h('div.nemesis__name', tNation(report.def)),
+          h('div.nemesis__since',
+            t('nemesis.since', 'On the desk since Q{n} · {q} quarters', {
+              n: report.since + 1, q: report.quarters,
+            })),
+        ),
+      ),
+      h('p.panel__note',
+        report.origin === 'yours'
+          ? t('nemesis.originYours', 'It began with something you did.')
+          : report.origin === 'theirs'
+            ? t('nemesis.originTheirs', 'It began with something they did.')
+            : t('nemesis.originMutual', 'Neither side would agree on who started it.')),
+      h('div.nemesis__rows',
+        h('div.nemesis__row',
+          h('span', t('nemesis.balance', 'Their forces against yours')),
+          h('span', estimatedBalance(game, report.id).text)),
+        h('div.nemesis__row',
+          h('span', t('nemesis.relation', 'Relation')),
+          h('span', { style: { color: relationColour(report.relation) } }, `${Math.round(report.relation)}`)),
+        h('div.nemesis__row',
+          h('span', t('nemesis.ladder', 'Escalation')),
+          h('span', report.ladder.toFixed(1))),
+        report.atWar
+          ? h('div.nemesis__row', h('span', { style: { color: 'var(--st-critical)' } }, t('inspector.atWar', '⚔ At war')), h('span', ''))
+          : null,
+      ),
+      report.theirs.length
+        ? h('div',
+            h('h3.subhead', t('nemesis.theyDid', 'What they have done')),
+            h('ul.grievances', report.theirs.slice(0, 4).map((entry) =>
+              h('li.grievance',
+                h('span.grievance__what', tActionName(entry.label, entry.actionId)),
+                h('span.grievance__when', `Q${entry.turn}`)))),
+          )
+        : null,
+      report.yours.length
+        ? h('div',
+            h('h3.subhead', t('nemesis.youDid', 'What you have done')),
+            h('ul.grievances', report.yours.slice(0, 4).map((entry) =>
+              h('li.grievance',
+                h('span.grievance__what', tActionName(entry.label, entry.actionId)),
+                h('span.grievance__when', `Q${entry.turn}`)))),
+          )
+        : null,
+      h('p.panel__note.panel__note--warn',
+        t('nemesis.warning', 'They spend their quarters on you rather than on whoever else is available.')),
+    );
+  }
+
+  /**
+   * The rules of the office, what they forbid, what you have committed the
+   * budget to, and — in the last year — whether the country will have you again.
+   */
+  #government() {
+    const game = this.game;
+    const clauses = describeConstitution(game);
+    const running = commitmentsOf(game).filter((c) => !c.closed);
+    const inFinalYear = game.turn >= game.totalTurns - 4;
+    const score = inFinalYear ? scoreRun(game) : null;
+    const election = inFinalYear ? electionState(game, score) : null;
+
+    return h('section.panel',
+      h('div.panel__titlebar',
+        h('h2.panel__title', t('panel.government', 'The office')),
+        h('span.badge', t('government.term', 'Term {n}', { n: game.term || 1 })),
+      ),
+
+      h('div.clauses',
+        clauses.map((clause) =>
+          h('div.clause', { title: t(`clause.${clause.id}.${String(clause.value)}`, clause.note) },
+            h('span.clause__name', t(`clause.${clause.id}`, clause.name)),
+            h('span.clause__value', { class: clause.amendedThisTerm ? 'clause__value is-amended' : 'clause__value' },
+              t(`clauseValue.${clause.id}.${String(clause.value)}`, clause.label)),
+          ),
+        ),
+      ),
+      h('div.row.row--tight',
+        h('button.btn.btn--sm.btn--ghost', {
+          disabled: amendmentsLeft(game) <= 0,
+          title: amendmentsLeft(game) > 0
+            ? t('government.amendHint', 'One amendment per term. This one is still available.')
+            : t('constitution.onePerTerm', 'One amendment per term. You have used yours.'),
+          onclick: () => { this.amendOpen = true; this.render(); },
+        }, amendmentsLeft(game) > 0
+          ? t('government.amend', 'Amend the constitution')
+          : t('government.amended', 'Amendment used')),
+      ),
+
+      running.length
+        ? h('div',
+            h('h3.subhead', t('government.committed', 'Committed, whatever you do next')),
+            running.map((c) =>
+              h('div.commitment',
+                h('div',
+                  h('div.commitment__label', t(`modifier.${c.label}`, c.label)),
+                  h('div.commitment__meta',
+                    t('government.perQuarter', '{amount}/q · {n} quarters left · break fee {fee}', {
+                      amount: money(c.quarterly), n: c.turnsLeft, fee: money(breakCost(c)),
+                    })),
+                ),
+                h('button.btn.btn--tiny.btn--danger', {
+                  title: t('government.cancelHint', 'Cancelling costs the break fee immediately.'),
+                  onclick: () => {
+                    if (!window.confirm(t('government.cancelConfirm',
+                      'Cancel {label} for {fee}? This cannot be undone.',
+                      { label: c.label, fee: money(breakCost(c)) }))) return;
+                    cancel(this.game, c.id);
+                    this.app.toast(t('government.cancelled', '{label} cancelled.', { label: c.label }));
+                    this.render();
+                  },
+                }, t('common.cancel', 'Cancel')),
+              ),
+            ),
+            h('div.commitment__total',
+              t('government.totalCommitted', '{amount} a quarter is already spoken for.',
+                { amount: money(committedSpend(game)) })),
+          )
+        : null,
+
+      election
+        ? h('div',
+            h('h3.subhead', t('government.election', 'The vote at the end of the term')),
+            election.allowed
+              ? h('div',
+                  h('div.election__head',
+                    h('span.election__share', `${election.share.toFixed(0)}%`),
+                    h('span.election__band', { class: `election__band is-${electionBand(election.share).id}` },
+                      t(`electionBand.${electionBand(election.share).id}`, electionBand(election.share).label)),
+                  ),
+                  h('div.stat__track',
+                    h('div.stat__fill', {
+                      style: { width: `${election.share}%`, background: statColour(election.share) },
+                    })),
+                  h('div.election__reasons',
+                    election.reasons.slice(0, 4).map((r) =>
+                      h('span.election__reason', { class: r.value >= 0 ? 'election__reason is-up' : 'election__reason is-down' },
+                        `${t(`electionReason.${r.label}`, r.label)} ${r.value >= 0 ? '+' : '−'}${Math.abs(r.value).toFixed(0)}`)),
+                  ),
+                )
+              : h('p.panel__note.panel__note--warn',
+                  t('government.barred',
+                    'You may not stand again: the constitution allows {n} term(s). Amending that clause is the only way round it, and everyone will know why you did.',
+                    { n: election.limit })),
+          )
+        : null,
     );
   }
 
@@ -641,20 +939,46 @@ export class GameScreen {
   }
 
   #objectives() {
-    const score = scoreRun(this.game);
+    const game = this.game;
+    const score = scoreRun(game);
+    const untilReview = Math.max(0, nextReviewTurn(game) - game.turn);
+    const ambition = ambitionProgress(game);
+
     return h('section.panel',
-      h('h2.panel__title', t('panel.mandate', 'Your mandate')),
+      h('div.panel__titlebar',
+        h('h2.panel__title', t('panel.mandate', 'Your mandate')),
+        h('span.badge', { title: t('mandate.reviewHint',
+          'The brief is rewritten every {n} quarters from whatever has happened since.', { n: REVIEW_EVERY }) },
+          untilReview === 0
+            ? t('mandate.reviewNow', 'under review')
+            : t('mandate.reviewIn', 'reviewed in {n}q', { n: untilReview })),
+      ),
       h('ul.objectives',
         score.objectives.map((obj) =>
           h('li.objective', { class: obj.met ? 'objective is-met' : 'objective' },
             h('span.objective__mark', obj.met ? '✓' : '○'),
             h('div',
-              h('div.objective__title', t(`objective.${obj.id}.title`, obj.title)),
+              h('div.objective__title',
+                t(`objective.${obj.id}.title`, obj.title),
+                obj.origin === 'history'
+                  ? h('span.objective__origin', {
+                      title: t('mandate.historyHint', 'Written into the brief by something that happened.'),
+                    }, t('mandate.fromHistory', 'from events'))
+                  : null,
+              ),
               h('div.objective__detail', this.#objectiveDetail(obj)),
             ),
           ),
         ),
       ),
+      ambition
+        ? h('div.ambition', { class: ambition.met ? 'ambition is-met' : 'ambition' },
+            h('div.ambition__label', t('mandate.ambition', 'What you have not told anyone')),
+            h('div.ambition__title', t(`ambition.${ambition.id}`, ambition.title)),
+            h('div.ambition__detail', t(`ambition.${ambition.id}Detail`, ambition.detail)),
+            h('div.ambition__state', ambition.hint),
+          )
+        : null,
     );
   }
 
@@ -1266,6 +1590,23 @@ export class GameScreen {
         h('span', `${action.pc} PC`),
         // Why this one is on the shelf at all — the situation it answers.
         reason ? h('span.action__tag.action__tag--why', t(`why.${reason}`, WHY_LABELS[reason] || reason)) : null,
+        // Who at home wants this, and who will hold it against you. The second
+        // axis every order gained when political capital got creditors.
+        ...(() => {
+          const { champion, objector, reading } = poles(action);
+          const chip = (id, dir) => {
+            const spec = FACTIONS.find((f) => f.id === id);
+            return h('span.action__tag', { class: `action__tag action__tag--${dir}`,
+              title: t('orders.factionHint', '{faction}: {n}', {
+                faction: t(`faction.${id}`, spec.name), n: reading[id] > 0 ? `+${reading[id]}` : reading[id],
+              }) },
+              `${dir === 'likes' ? '▲' : '▼'} ${t(`factionShort.${id}`, SHORT_FACTION[id])}`);
+          };
+          return [
+            champion ? chip(champion, 'likes') : null,
+            objector ? chip(objector, 'dislikes') : null,
+          ].filter(Boolean);
+        })(),
         cost > state.treasury && !blocked ? h('span.action__tag.action__tag--risk', t('orders.onCredit', 'on credit')) : null,
         recommended ? h('span.action__tag.action__tag--rec', t('orders.suggested', 'suggested')) : null,
         action.target === 'nation' ? h('span.action__tag', t('orders.needTarget', 'pick a target')) : null,
@@ -1448,6 +1789,14 @@ export class GameScreen {
         undecided ? h('span.actionbar__warn', t('orders.crisisWaiting', ' A crisis is awaiting your decision.')) : null,
       ),
       h('div.row',
+        // The closing session, once it is sitting. It is the last decision of
+        // the term and the one that pays out forty quarters of diplomacy, so it
+        // gets a button of its own rather than a line in a panel.
+        congressOf(game) && !congressOf(game).resolved
+          ? h('button.btn.btn--ghost.btn--congress', {
+              onclick: () => { this.congressOpen = true; this.render(); },
+            }, t('congress.openFloor', 'The congress is sitting →'))
+          : null,
         this.orders.length
           ? h('button.btn.btn--ghost', { onclick: () => { this.orders = []; this.render(); } }, t('orders.clear', 'Clear orders'))
           : null,
@@ -1777,15 +2126,206 @@ export class GameScreen {
     );
   }
 
+  // ── The amendment desk ───────────────────────────────────────────────────
+
+  #amendModal() {
+    const game = this.game;
+    const options = amendmentOptions(game);
+    const left = amendmentsLeft(game);
+    const byClause = new Map();
+    for (const option of options) {
+      if (!byClause.has(option.clauseId)) byClause.set(option.clauseId, []);
+      byClause.get(option.clauseId).push(option);
+    }
+
+    return h('div.modal', {
+      role: 'dialog', 'aria-modal': 'true',
+      onclick: (e) => { if (e.target.classList.contains('modal')) { this.amendOpen = false; this.render(); } },
+    },
+      h('div.modal__panel',
+        h('button.modal__close', { onclick: () => { this.amendOpen = false; this.render(); }, 'aria-label': 'Close' }, '✕'),
+        h('h2.modal__title', t('amend.title', 'Amend the constitution')),
+        h('p.modal__body',
+          t('amend.body',
+            'One amendment per term. The rules you inherited say what this office may do; changing them is the only way to widen that, and the country reads the change as a statement about you.')),
+        left <= 0
+          ? h('p.panel__note.panel__note--warn', t('constitution.onePerTerm', 'One amendment per term. You have used yours.'))
+          : null,
+        [...byClause.entries()].map(([clauseId, list]) =>
+          h('div.detail__section',
+            h('h3.subhead', t(`clause.${clauseId}`, list[0].clauseName)),
+            h('div.amendments', list.map((option) =>
+              h('button.amendment', {
+                disabled: left <= 0 || game.politicalCapital < option.pc,
+                title: option.note,
+                onclick: () => {
+                  const warn = option.backlash > 8
+                    ? t('amend.selfServing', 'This is an amendment that widens your own powers. Everyone will read it that way. Proceed?')
+                    : t('amend.confirm', 'Amend {clause} to “{setting}” for {pc} political capital?',
+                        { clause: option.clauseName, setting: option.label, pc: option.pc });
+                  if (!window.confirm(warn)) return;
+                  const result = amend(this.game, option.clauseId, option.to, null);
+                  this.app.toast(result.ok
+                    ? t('amend.done', 'The constitution is amended.')
+                    : result.reason);
+                  if (result.ok) this.amendOpen = false;
+                  this.render();
+                },
+              },
+                h('div.amendment__head',
+                  h('span.amendment__label', t(`clauseValue.${clauseId}.${String(option.to)}`, option.label)),
+                  h('span.amendment__cost', `${option.pc} PC`),
+                ),
+                h('div.amendment__note', t(`clause.${clauseId}.${String(option.to)}`, option.note)),
+                option.backlash > 0
+                  ? h('div.amendment__backlash', t('amend.backlash', 'Unpopular: unrest and approval will move against you.'))
+                  : h('div.amendment__backlash.is-good', t('amend.welcomed', 'This one would be welcomed.')),
+              ),
+            )),
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ── The congress floor ───────────────────────────────────────────────────
+
+  #congressModal() {
+    const game = this.game;
+    const congress = congressOf(game);
+    if (!congress) return null;
+    const score = scoreRun(game);
+    const quartersLeft = Math.max(0, game.totalTurns - game.turn);
+
+    return h('div.modal', {
+      role: 'dialog', 'aria-modal': 'true',
+      onclick: (e) => { if (e.target.classList.contains('modal')) { this.congressOpen = false; this.render(); } },
+    },
+      h('div.modal__panel.modal__panel--wide',
+        h('button.modal__close', { onclick: () => { this.congressOpen = false; this.render(); }, 'aria-label': 'Close' }, '✕'),
+        h('h2.modal__title', t('congress.title', 'The world congress')),
+        h('p.modal__body',
+          congress.resolved
+            ? t('congress.closed', 'The floor is closed. This is how the room voted.')
+            : t('congress.open',
+                'Every government in the room is writing the next order. The vote is held when the term ends — {n} quarter(s) from now. You may put one clause on the paper and hold {m} meeting(s).',
+                { n: quartersLeft, m: congress.lobbyLeft })),
+
+        congress.clauses.map((clause) => {
+          const result = congress.resolved
+            ? congress.results.find((r) => r.clause.id === clause.id)
+            : tally(game, clause);
+          const yourVote = result.votes.find((v) => v.id === game.playerId);
+          return h('div.clausecard', { class: result.passing || result.passed ? 'clausecard is-passing' : 'clausecard' },
+            h('div.clausecard__head',
+              h('span.clausecard__title', t(`clauseType.${clause.typeId}`, clause.title)),
+              h('span.clausecard__share',
+                `${Math.round(result.share * 100)}%`),
+            ),
+            h('p.clausecard__detail', t(`clauseType.${clause.typeId}Detail`, clause.detail)),
+            h('div.stat__track',
+              h('div.stat__fill', {
+                style: {
+                  width: `${Math.min(100, result.share * 100)}%`,
+                  background: (result.passing || result.passed) ? 'var(--good)' : 'var(--muted-2)',
+                },
+              }),
+            ),
+            h('div.clausecard__meta',
+              clause.proposerId === game.playerId
+                ? h('span.badge.badge--ai', t('congress.yours', 'your clause'))
+                : clause.proposerId
+                  ? h('span.badge', t('congress.proposedBy', 'proposed by {nation}', { nation: tNation(defOf(game, clause.proposerId)) }))
+                  : h('span.badge', t('congress.fromFloor', 'from the floor')),
+              h('span', t('congress.weights', 'for {a} · against {b} · abstaining {c}', {
+                a: result.forWeight, b: result.againstWeight, c: result.abstainWeight,
+              })),
+              yourVote ? h('span', t('congress.youVote', 'you: {v}', { v: t(`congress.${yourVote.vote}`, yourVote.vote) })) : null,
+            ),
+            congress.resolved
+              ? null
+              : h('div.clausecard__lobby',
+                  h('span.clausecard__lobbyLabel', t('congress.lobbyLabel', 'Bring somebody round:')),
+                  this.#lobbyTargets(clause, result).map((entry) =>
+                    h('button.btn.btn--tiny.btn--ghost', {
+                      disabled: congress.lobbyLeft <= 0 || game.politicalCapital < 1,
+                      title: t('congress.lobbyHint',
+                        'One political capital. How far they move depends on your standing with them and the record you are running on.'),
+                      onclick: () => {
+                        const res = lobby(this.game, clause.id, entry.id, score);
+                        this.app.toast(res.ok
+                          ? t('congress.lobbied', '{nation} moves {n} toward you.',
+                              { nation: tNation(defOf(game, entry.id)), n: res.shift.toFixed(2) })
+                          : res.reason);
+                        this.render();
+                      },
+                    }, `${defOf(game, entry.id)?.flag || ''} ${tNation(defOf(game, entry.id))}`),
+                  ),
+                ),
+          );
+        }),
+
+        congress.resolved || congress.proposalUsed
+          ? null
+          : h('div.detail__section',
+              h('h3.subhead', t('congress.propose', 'Put your own clause on the paper (3 PC)')),
+              h('div.detail__buttons',
+                CLAUSE_TYPES
+                  .filter((type) => !congress.clauses.some((c) => c.typeId === type.id))
+                  .map((type) =>
+                    h('button.btn.btn--ghost.btn--sm', {
+                      disabled: game.politicalCapital < 3,
+                      title: t(`clauseType.${type.id}Detail`, type.detail),
+                      onclick: () => {
+                        const res = propose(this.game, type.id, this.app.rngForUi());
+                        this.app.toast(res.ok
+                          ? t('congress.proposed', 'It is on the paper.')
+                          : res.reason);
+                        this.render();
+                      },
+                    }, t(`clauseType.${type.id}`, type.title)),
+                  ),
+              ),
+            ),
+      ),
+    );
+  }
+
+  /** The three countries most worth a meeting on this clause. */
+  #lobbyTargets(clause, result) {
+    const game = this.game;
+    return [...result.votes]
+      .filter((v) => v.id !== game.playerId && v.vote !== 'for')
+      // Heaviest votes that are closest to being winnable.
+      .sort((a, b) => (b.weight * (1 - Math.abs(b.lean))) - (a.weight * (1 - Math.abs(a.lean))))
+      .slice(0, 3);
+  }
+
   #closeDetail() {
     this.detailNationId = null;
     this.render();
   }
 
+  /**
+   * The end of a term.
+   *
+   * Three faces: the verdict and the grade, the page a textbook would write
+   * from the run's own log, and — if the term simply ran out rather than the
+   * government falling — the vote on whether you get another one.
+   */
   #endgameModal() {
     const game = this.game;
     const ending = game.ending || {};
     const score = ending.score || scoreRun(game);
+    const termEnd = ending.kind === 'term-end';
+    const election = ending.election || (termEnd ? electionState(game, score) : null);
+    const page = chronicle(game, score);
+
+    const tabs = [
+      ['verdict', t('end.verdict', 'Verdict')],
+      ['history', t('end.history', 'How it is remembered')],
+      ...(termEnd ? [['next', t('end.whatNext', 'What next')]] : []),
+    ];
 
     return h('div.modal', { role: 'dialog', 'aria-modal': 'true' },
       h('div.modal__panel.modal__panel--end',
@@ -1793,34 +2333,172 @@ export class GameScreen {
           `${NATIONS_BY_ID[game.playerId].name} · ${dateLabel(game)} · `,
           game.status === 'defeat' ? t('end.governmentFallen', 'government fallen') : t('end.termConcluded', 'term concluded')),
         h('h2.modal__title', ending.title || 'The run is over'),
-        h('p.modal__body', ending.summary || ''),
-        h('div.grade',
-          h('div.grade__letter', score.grade),
-          h('div.grade__meta',
-            h('div.grade__score', `${score.total} / 100`),
-            h('div.grade__tier', `${score.tier} · difficulty ${score.difficulty}/10`),
+
+        h('div.tabs',
+          tabs.map(([id, label]) =>
+            h('button.tab', {
+              class: this.endTab === id ? 'tab is-active' : 'tab',
+              onclick: () => { this.endTab = id; this.render(); },
+            }, label),
           ),
         ),
-        h('div.grade__components',
-          score.components.map((c) =>
-            h('div.gradebar',
-              h('div.gradebar__head', h('span', c.label), h('span', String(c.value))),
-              h('div.stat__track', h('div.stat__fill', { style: { width: `${c.value}%`, background: statColour(c.value) } })),
-            ),
-          ),
-        ),
-        h('h3.subhead', t('end.mandate', 'Mandate')),
-        h('ul.objectives',
-          score.objectives.map((o) =>
-            h('li.objective', { class: o.met ? 'objective is-met' : 'objective' },
-              h('span.objective__mark', o.met ? '✓' : '✕'),
-              h('div', h('div.objective__title', t(`objective.${o.id}.title`, o.title))))),
-        ),
+
+        this.endTab === 'history' ? this.#endHistory(page)
+          : this.endTab === 'next' && termEnd ? this.#endNext(score, election)
+            : this.#endVerdict(ending, score),
+
         h('div.row.row--end',
           h('button.btn.btn--ghost', { onclick: () => this.app.exportSave() }, t('end.exportRun', 'Export run')),
+          h('button.btn.btn--ghost', {
+            onclick: () => {
+              const text = chronicleText(page);
+              navigator.clipboard?.writeText(text);
+              this.app.toast(t('end.copied', 'The page is on your clipboard.'));
+            },
+          }, t('end.copyPage', 'Copy the page')),
           h('button.btn.btn--primary', { onclick: () => this.app.quitToMenu() }, t('end.newGame', 'New game')),
         ),
       ),
+    );
+  }
+
+  #endVerdict(ending, score) {
+    return h('div',
+      h('p.modal__body', ending.summary || ''),
+      h('div.grade',
+        h('div.grade__letter', score.grade),
+        h('div.grade__meta',
+          h('div.grade__score', `${score.total} / 100`),
+          h('div.grade__tier', `${score.tier} · difficulty ${score.difficulty}/10`),
+        ),
+      ),
+      h('div.grade__components',
+        score.components.map((c) =>
+          h('div.gradebar',
+            h('div.gradebar__head', h('span', c.label), h('span', String(c.value))),
+            h('div.stat__track', h('div.stat__fill', { style: { width: `${c.value}%`, background: statColour(c.value) } })),
+          ),
+        ),
+      ),
+      score.ambitionBonus || score.settlementBonus
+        ? h('div.bonuses',
+            score.ambitionBonus
+              ? h('span.bonus', t('end.ambitionBonus', 'private ambition +{n}', { n: score.ambitionBonus }))
+              : null,
+            score.settlementBonus
+              ? h('span.bonus', t('end.settlementBonus', 'the settlement +{n}', { n: score.settlementBonus }))
+              : null,
+          )
+        : null,
+      h('h3.subhead', t('end.mandate', 'Mandate')),
+      h('ul.objectives',
+        score.objectives.map((o) =>
+          h('li.objective', { class: o.met ? 'objective is-met' : 'objective' },
+            h('span.objective__mark', o.met ? '✓' : '✕'),
+            h('div', h('div.objective__title', t(`objective.${o.id}.title`, o.title))))),
+      ),
+      h('h3.subhead', t('end.ambitions', 'What everybody privately wanted')),
+      h('div.reveals',
+        revealAmbitions(this.game, { limit: 8 }).map((entry) =>
+          h('div.reveal', { class: entry.achieved ? 'reveal is-met' : 'reveal' },
+            h('span.reveal__flag', entry.def?.flag || '·'),
+            h('span.reveal__name', tNation(entry.def)),
+            h('span.reveal__what', t(`ambition.${entry.ambition.id}`, entry.ambition.title)),
+            h('span.reveal__mark', entry.achieved ? '✓' : '✕'),
+          ),
+        ),
+      ),
+    );
+  }
+
+  #endHistory(page) {
+    return h('div.chronicle',
+      h('h3.chronicle__title', page.title),
+      h('div.chronicle__era', page.era),
+      page.paragraphs.map((paragraph) => h('p.chronicle__para', paragraph)),
+      h('div.chronicle__ledger',
+        page.ledger.map((row) =>
+          h('div.chronicle__row', h('span', row.label), h('span', row.value))),
+      ),
+      h('blockquote.chronicle__epitaph', page.epitaph),
+      h('div.chronicle__seed', t('end.seed', 'seed {seed}', { seed: page.seed })),
+    );
+  }
+
+  #endNext(score, election) {
+    const game = this.game;
+    const legacy = inheritance(game);
+    const band = electionBand(election.share);
+
+    return h('div',
+      h('p.modal__body',
+        election.allowed
+          ? t('end.standBody',
+              'The term is over. The constitution allows you to stand again, and the country is about to say whether it wants you to.')
+          : t('end.barredBody',
+              'The term is over and the constitution says it was your last. Whoever comes next inherits everything below.')),
+
+      election.allowed
+        ? h('div.election',
+            h('div.election__head',
+              h('span.election__share', `${election.share.toFixed(0)}%`),
+              h('span.election__band', { class: `election__band is-${band.id}` },
+                t(`electionBand.${band.id}`, band.label)),
+            ),
+            h('div.stat__track',
+              h('div.stat__fill', { style: { width: `${election.share}%`, background: statColour(election.share) } })),
+            h('div.election__reasons',
+              election.reasons.map((r) =>
+                h('span.election__reason', { class: r.value >= 0 ? 'election__reason is-up' : 'election__reason is-down' },
+                  `${t(`electionReason.${r.label}`, r.label)} ${r.value >= 0 ? '+' : '−'}${Math.abs(r.value).toFixed(0)}`)),
+            ),
+          )
+        : null,
+
+      h('h3.subhead', t('end.inherit', 'What carries over')),
+      h('div.detail__grid',
+        detailStat(t('end.debt', 'Debt'), legacy.debt ? money(legacy.debt) : '—'),
+        detailStat(t('end.commitments', 'Programmes running'), String(legacy.commitments.length),
+          legacy.committedQuarterly ? `${money(legacy.committedQuarterly)}/q` : ''),
+        detailStat(t('end.warsOn', 'Wars still on'), String(legacy.wars)),
+        detailStat(t('end.amendmentsMade', 'Amendments made'), String(legacy.amendments)),
+        detailStat(t('end.blocsHeld', 'Organisations'), String(legacy.blocs)),
+        detailStat(t('end.rivalOpen', 'Standing problem'),
+          legacy.nemesis ? tNation(defOf(game, legacy.nemesis)) : '—'),
+      ),
+
+      this.standingAgain
+        ? h('p.panel__note', this.standingAgain)
+        : h('div.row.row--end',
+            h('button.btn.btn--ghost', {
+              onclick: () => {
+                const result = concludeTerm(this.game, score, { stand: false });
+                this.standingAgain = t('end.steppedDown',
+                  'You stood down. The country goes on without you, which was always going to happen eventually.');
+                this.app.saveNow();
+                this.render();
+              },
+            }, t('end.standDown', 'Stand down')),
+            h('button.btn.btn--primary', {
+              disabled: !election.allowed,
+              title: election.allowed ? '' : t('end.barredHint', 'The constitution does not allow another term.'),
+              onclick: () => {
+                const result = concludeTerm(this.game, score, { stand: true });
+                if (result.outcome === 're-elected') {
+                  this.app.toast(t('end.wonAgain', 'Returned for another term.'));
+                  this.standingAgain = null;
+                  this.endTab = 'verdict';
+                  this.app.saveNow();
+                  this.app.startNextTerm?.();
+                } else {
+                  this.standingAgain = result.outcome === 'defeated'
+                    ? t('end.lost', 'The country said no, on {pct}% of the vote.', { pct: result.election.share.toFixed(0) })
+                    : t('end.barred', 'The constitution said no.');
+                }
+                this.render();
+              },
+            }, t('end.standAgain', 'Stand again')),
+          ),
     );
   }
 }

@@ -23,6 +23,7 @@ import {
   serialize,
   setRelation,
 } from '../src/engine/state.js';
+import { ensureTerm } from '../src/engine/lifecycle.js';
 import { advanceTurn, scoreRun, worldDigest } from '../src/engine/turn.js';
 import { gameModifiers } from '../src/engine/worldmodes.js';
 import { declareWar, findWar } from '../src/engine/war.js';
@@ -152,7 +153,7 @@ test('new games start from the current-world baseline', () => {
   assert.equal(game.year, 2026);
   assert.equal(game.totalTurns, 24);
   assert.equal(Object.keys(game.nations).length, NATIONS.length);
-  assert.ok(game.objectives.length >= 3);
+  assert.ok(ensureTerm(game).objectives.length >= 3);
   // Anchored relations survive construction.
   assert.equal(getRelation(game, 'ind', 'pak'), -74);
   assert.equal(getRelation(game, 'rus', 'ukr'), -96);

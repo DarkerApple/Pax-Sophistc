@@ -1,6 +1,7 @@
 // The quarter. Orders resolve, the world answers, the books get balanced.
 
 import { NATIONS_BY_ID } from '../data/nations.js';
+import { ACTIONS_BY_ID } from './actions.js';
 import { gameModifiers } from './worldmodes.js';
 import { applyGlobalEvent, rollEvents } from './events.js';
 import { applyEffect } from './effects.js';
@@ -10,6 +11,15 @@ import { availableFunds, creditLimit, debtOf, serviceDebt } from './finance.js';
 import { resolveAction, resolveDecision } from './resolve.js';
 import { driftAlignments, reconcileSovereignty } from './statecraft.js';
 import { containment, primaryThreat } from './coalitions.js';
+import { ensureTerm } from './lifecycle.js';
+import { recordOrder, tickFactions } from './factions.js';
+import { noteQuarter, updateNemesis } from './nemesis.js';
+import { decayIntel, recordIntel } from './intel.js';
+import { liveObjectives, meets, reviewDue, reviewMandate } from './mandate.js';
+import { tickCommitments } from './commitments.js';
+import { congressDue, congressOutcome, convene, resolveCongress } from './congress.js';
+import { ambitionBonus } from './ambitions.js';
+import { electionState } from './lifecycle.js';
 import {
   QUARTERS,
   activeWarsFor,
@@ -42,6 +52,7 @@ export function advanceTurn(game, { orders = [], decisionChoice = null } = {}) {
   if (game.status !== 'active') {
     throw new Error('This game has already ended.');
   }
+  ensureTerm(game);
   const mods = gameModifiers(game);
 
   return withRng(game, (rng) => {
@@ -88,6 +99,10 @@ export function advanceTurn(game, { orders = [], decisionChoice = null } = {}) {
       const outcome = resolveAction(game, rng, mods, order, game.playerId);
       if (!outcome) continue;
       report.playerOutcomes.push(outcome);
+      // Every order is read by the four domestic creditors, and anything aimed
+      // at another country may have bought you a look at them.
+      outcome.factions = recordOrder(game, outcome, ACTIONS_BY_ID[outcome.actionId] || order.custom);
+      outcome.intelGained = recordIntel(game, outcome);
       const chain = [
         ...resolveConsequences(game, rng, mods, outcome),
         ...domesticBlowback(game, rng, mods, outcome),
@@ -146,15 +161,28 @@ export function advanceTurn(game, { orders = [], decisionChoice = null } = {}) {
     relationDrift(game, rng, mods);
     tensionDrift(game, rng, mods);
 
-    // 7. Political capital for next quarter.
-    const player = game.nations[game.playerId];
-    game.politicalCapital = Math.max(
-      1,
-      Math.min(
-        12,
-        Math.round(4 + player.approval / 30 + player.stability / 30 + mods.politicalCapitalBonus),
-      ),
-    );
+    // 7. The rivalry, the fog, and the four creditors of political capital.
+    noteQuarter(game, report);
+    report.nemesis = updateNemesis(game, rng);
+    decayIntel(game);
+
+    report.factions = tickFactions(game, rng, mods, report);
+    game.politicalCapital = report.factions.capital.total;
+
+    // The brief is rewritten every two years from whatever has happened since.
+    if (reviewDue(game)) {
+      report.mandate = reviewMandate(game, rng, scoreContext(game));
+    }
+
+    // The closing session convenes in the last year and votes in the last
+    // quarter, so a term ends on a decision rather than on a clock.
+    if (congressDue(game) && !game.congress) {
+      convene(game, rng);
+      report.congressOpened = true;
+    }
+    if (game.congress && !game.congress.resolved && game.turn >= game.totalTurns) {
+      report.congressResults = resolveCongress(game, rng);
+    }
 
     // 8. Snapshot + endgame check.
     for (const state of Object.values(game.nations)) {
@@ -254,6 +282,14 @@ function economyTick(game, rng, mods) {
     // Revenue and standing costs.
     const { revenue, upkeep } = ledgerFor(game, state.id, mods);
     state.treasury = state.treasury + revenue - upkeep;
+
+    // Standing commitments draw their instalment before anything else. This is
+    // money you decided to spend several years ago and cannot decline today.
+    if (isPlayer) {
+      const committed = tickCommitments(game);
+      summary.committed = Math.round(committed.paid);
+      summary.commitmentsFinished = committed.finished.map((c) => c.label);
+    }
 
     // Deficits are financed, not magicked away.
     const debtReport = serviceDebt(game, state, rng, mods);
@@ -427,12 +463,18 @@ function checkEndgame(game, mods) {
 
   if (game.turn >= game.totalTurns) {
     const score = scoreRun(game, mods, { collapsed: false });
+    // A term ends in an election, not in a full stop. Whether the country will
+    // have you again, and whether the constitution would even allow it, is the
+    // last decision of the term rather than a verdict handed down after it.
+    const election = electionState(game, score);
     return {
       status: score.total >= 60 ? 'victory' : 'complete',
       kind: 'term-end',
       title: score.total >= 60 ? 'Term Concluded — Mandate Vindicated' : 'Term Concluded',
       summary: `Your time in office ends in ${dateLabel(game)} with ${def.name} ${score.verdict}.`,
       score,
+      election,
+      settlement: congressOutcome(game),
     };
   }
 
@@ -440,16 +482,33 @@ function checkEndgame(game, mods) {
 }
 
 /** Grade the run against the objectives set at the start. */
-export function scoreRun(game, mods = gameModifiers(game), { collapsed = false } = {}) {
+/**
+ * The derived figures every objective is judged against, computed once so a
+ * mandate of six does not recompute GDP growth six times.
+ */
+export function scoreContext(game) {
   const player = game.nations[game.playerId];
   const start = game.startSnapshot;
-
-  const gdpGrowth = player.gdp / start.gdp - 1;
-  const influenceGain = player.influence - start.influence;
   const wars = game.wars.filter(
     (w) => w.attackers.includes(game.playerId) || w.defenders.includes(game.playerId),
   );
-  const warsWon = wars.filter((w) => !w.active && w.outcome?.includes(NATIONS_BY_ID[game.playerId].adjective)).length;
+  return {
+    gdpGrowth: player.gdp / start.gdp - 1,
+    influenceGain: player.influence - start.influence,
+    wars,
+    warsWon: wars.filter(
+      (w) => !w.active && w.outcome?.includes(NATIONS_BY_ID[game.playerId]?.adjective || '\u0000'),
+    ).length,
+  };
+}
+
+export function scoreRun(game, mods = gameModifiers(game), { collapsed = false } = {}) {
+  ensureTerm(game);
+  const player = game.nations[game.playerId];
+  const start = game.startSnapshot;
+
+  const ctx = scoreContext(game);
+  const { gdpGrowth, influenceGain, wars, warsWon } = ctx;
   const nuclearOnWatch = game.stats.nukesUsed > 0;
 
   // Graded against what the country would have done on autopilot, so a 0.3%/quarter
@@ -470,18 +529,17 @@ export function scoreRun(game, mods = gameModifiers(game), { collapsed = false }
   // A hard run is worth more than an easy one, but only by a sixth either way.
   total = clamp(total * (0.85 + mods.t * 0.3), 0, 100);
 
-  const objectives = game.objectives.map((obj) => {
-    let met = false;
-    switch (obj.metric) {
-      case 'gdpGrowth': met = gdpGrowth >= obj.target; break;
-      case 'stabilityFloor': met = player.stability >= obj.target; break;
-      case 'influenceGain': met = influenceGain > obj.target; break;
-      case 'tensionCeiling': met = game.worldTension < obj.target && !wars.some((w) => w.active); break;
-      case 'warOutcome': met = !wars.some((w) => w.active) && game.stats.nukesUsed === 0; break;
-      default: met = false;
-    }
-    return { ...obj, met };
-  });
+  const objectives = liveObjectives(game).map((obj) => ({ ...obj, met: meets(game, obj, ctx) }));
+
+  // Two things sit outside the five components: what the country privately
+  // wanted, and how the closing settlement went. Both are worth a few points
+  // and neither can rescue a bad decade on its own.
+  const secret = ambitionBonus(game);
+  const settlement = congressOutcome(game);
+  const settlementBonus = settlement
+    ? settlement.yoursCarried * 3 + Math.min(4, settlement.wentYourWay)
+    : 0;
+  total = clamp(total + secret + settlementBonus, 0, 100);
 
   const grade =
     total >= 88 ? 'S' : total >= 78 ? 'A' : total >= 66 ? 'B' : total >= 52 ? 'C' : total >= 38 ? 'D' : 'F';
@@ -502,6 +560,10 @@ export function scoreRun(game, mods = gameModifiers(game), { collapsed = false }
     verdict,
     components: components.map((c) => ({ ...c, value: Math.round(c.value) })),
     objectives,
+    ambitionBonus: secret,
+    settlement,
+    settlementBonus,
+    term: game.term || 1,
     gdpGrowth,
     influenceGain,
     difficulty: game.difficulty,

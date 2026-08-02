@@ -1,7 +1,7 @@
 // Game state construction, serialisation, and the small helpers every other
 // engine module leans on.
 
-import { BLOCS, NATIONS_BY_ID, powerRank, registerNation } from '../data/nations.js';
+import { BLOCS, NATIONS_BY_ID, registerNation } from '../data/nations.js';
 import { DEFAULT_SCENARIO, scenarioOf } from '../data/scenarios.js';
 import { Rng, hashSeed } from './rng.js';
 import { clampDifficulty } from './difficulty.js';
@@ -139,53 +139,6 @@ function initialNationState(def) {
  * The player's standing goals. These are what the end-of-run grade is measured
  * against, and what the AI narrator is told to write toward.
  */
-function buildObjectives(def) {
-  const objectives = [
-    {
-      id: 'prosperity',
-      title: 'Grow the economy',
-      detail: `Finish with ${def.name}'s GDP at least 8% above its starting level.`,
-      metric: 'gdpGrowth',
-      target: 0.08,
-    },
-    {
-      id: 'stability',
-      title: 'Hold the country together',
-      detail: 'Never let stability fall below 30, and finish above 55.',
-      metric: 'stabilityFloor',
-      target: 55,
-    },
-    {
-      id: 'standing',
-      title: 'Raise your standing',
-      detail: 'Finish with higher global influence than you started with.',
-      metric: 'influenceGain',
-      target: 0,
-    },
-  ];
-
-  // Only the genuine great powers are graded on keeping the system stable;
-  // everyone else is graded on surviving it. (Power ranks run ~58-180.)
-  if (powerRank(def) >= 124) {
-    objectives.push({
-      id: 'order',
-      title: 'Keep the peace you profit from',
-      detail: 'End the run with world tension below 60 and no great-power war ongoing.',
-      metric: 'tensionCeiling',
-      target: 60,
-    });
-  } else {
-    objectives.push({
-      id: 'survival',
-      title: 'Survive the great-power squeeze',
-      detail: 'Avoid being drawn into a war you did not start, or win it if you are.',
-      metric: 'warOutcome',
-      target: 0,
-    });
-  }
-  return objectives;
-}
-
 function startingPoliticalCapital(difficulty) {
   // Kept local so state.js does not have to import the whole modifier stack.
   const t = (clampDifficulty(difficulty) - 1) / 9;
@@ -249,8 +202,31 @@ export function createGame({
     log: [],
     headlines: [],
     turnReports: [],
-    objectives: buildObjectives(def),
+    objectives: [],
     politicalCapital: 6 + startingPoliticalCapital(difficulty),
+    // Which term this is, and how many the executive has already served. The
+    // country is the save; a term is a chapter of it.
+    term: 1,
+    termHistory: [],
+    // The four domestic creditors of political capital, the rules that bound
+    // the office, and what every government privately wants. Filled in by
+    // openTerm() once the modules that own them can see a complete game.
+    factions: null,
+    constitution: null,
+    ambitions: {},
+    // The rivalry, the file behind it, and what your services can actually see.
+    nemesis: null,
+    pastNemeses: {},
+    grievances: {},
+    intel: {},
+    // Things you cannot simply stop doing.
+    commitments: [],
+    treatyLocks: {},
+    // The closing session, once it convenes.
+    congress: null,
+    congressEffects: {},
+    mandateReviewedAt: 0,
+    mandateReviews: 0,
     status: 'active', // active | victory | defeat | collapsed
     ending: null,
     startSnapshot: {

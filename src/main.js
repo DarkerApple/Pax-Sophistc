@@ -3,7 +3,8 @@
 import { Narrator } from './ai/narrator.js';
 import { PROVIDERS, PROVIDERS_BY_ID } from './ai/providers.js';
 import { AiClient } from './ai/client.js';
-import { createGame } from './engine/state.js';
+import { startGame } from './engine/lifecycle.js';
+import { withRng } from './engine/state.js';
 import { advanceTurn } from './engine/turn.js';
 import { CATEGORIES } from './engine/actions.js';
 import { h, mount } from './ui/dom.js';
@@ -58,6 +59,38 @@ class App {
     this.#renderOverlays();
   }
 
+  /**
+   * A draw from the game's own random stream, for the handful of interface
+   * actions that need one. Routed through withRng so the state is written back
+   * and the run stays replayable from its seed.
+   */
+  /**
+   * A new term on the same country. The save, the world and every commitment
+   * carry over; only the screen has to be told the run is live again.
+   */
+  startNextTerm() {
+    this.briefing = null;
+    this.screen.orders = [];
+    this.screen.decisionChoice = null;
+    this.screen.standingAgain = null;
+    this.screen.endTab = 'verdict';
+    this.saveNow();
+    this.screen.render();
+  }
+
+  rngForUi() {
+    const game = this.game;
+    return {
+      pick: (list) => withRng(game, (rng) => rng.pick(list)),
+      int: (a, b) => withRng(game, (rng) => rng.int(a, b)),
+      weighted: (list, weight) => withRng(game, (rng) => rng.weighted(list, weight)),
+      bool: (p) => withRng(game, (rng) => rng.bool(p)),
+      float: (a, b) => withRng(game, (rng) => rng.float(a, b)),
+      next: () => withRng(game, (rng) => rng.next()),
+      normal: (m, sd) => withRng(game, (rng) => rng.normal(m, sd)),
+    };
+  }
+
   async newGame({ playerNationId, difficulty, totalTurns, mode, seed, ai }) {
     saveAiConfig(ai);
     savePrefs({
@@ -68,7 +101,7 @@ class App {
     });
     this.narrator.update(ai);
 
-    this.game = createGame({ playerNationId, difficulty, totalTurns, seed, mode });
+    this.game = startGame({ playerNationId, difficulty, totalTurns, seed, mode });
     this.briefing = null;
 
     this.screen = new GameScreen(this.root, this);

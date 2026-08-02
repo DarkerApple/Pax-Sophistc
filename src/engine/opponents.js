@@ -17,6 +17,7 @@ import {
 } from './state.js';
 import { declareWar, findWar } from './war.js';
 import { alignedAgainst, threatOf } from './coalitions.js';
+import { rivalryWarBias, targetingBias } from './nemesis.js';
 
 const CATEGORY_TO_DOCTRINE_KEY = {
   economy: 'econ',
@@ -82,9 +83,12 @@ function chooseTarget(game, rng, actorId, action) {
   const scored = others.map((id) => {
     const rel = getRelation(game, actorId, id);
     const near = proximity(actorDef, NATIONS_BY_ID[id]);
-    const weight = friendly
+    const base = friendly
       ? Math.max(0.05, (rel + 100) / 90 + near)
       : Math.max(0.05, (-rel + 20) / 40 + near * 0.8 + livePower(game, id) / 90);
+    // A country that has made you its central problem spends its quarters on
+    // you rather than on whoever happened to score highest this turn.
+    const weight = friendly ? base : base * targetingBias(game, actorId, id);
     return { id, weight };
   });
 
@@ -142,6 +146,7 @@ function considerWar(game, rng, mods, actorId) {
   const chance =
     0.0075 *
     doctrine.aggression *
+    (target.id === game.playerId ? rivalryWarBias(game, actorId) : 1) *
     mods.aiAggression *
     (1 + game.worldTension / 90) *
     Math.min(2.2, target.ratio) *
