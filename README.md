@@ -25,9 +25,10 @@ Each turn is one **quarter**. You get a budget (a share of GDP), some **politica
 and up to **four orders**. Then the other 55 countries take their turn, the world throws
 events at you, wars grind forward, and the books get balanced.
 
-- **302 orders** across Quick, Economy, Military, Diplomacy, Domestic, Intelligence,
-  Technology and the War Room — from `Fiscal Stimulus` and `Semiconductor Self-Sufficiency`
-  to `Covert Destabilisation` and `Military Intervention`.
+- **348 orders** across ten tabs — Quick, Economy, Society, Domestic, Military, Diplomacy,
+  Alliances, Intelligence, Technology and the War Room — from `Fiscal Stimulus` and
+  `Semiconductor Self-Sufficiency` to `Covert Destabilisation` and `Mount an Amphibious
+  Landing`. Every shelf can be sorted by relevance, odds, cost, political capital or name.
 - **Every tab reads the room, not just Quick.** A category is a *pool*, not a menu: the
   economy tab of a country that is broke and stagnant offers `Defend the Currency`,
   `Comprehensive Tax Reform` and `Issue a Sovereign Bond`, while a rich and growing one is
@@ -46,9 +47,19 @@ events at you, wars grind forward, and the books get balanced.
   started calling you a problem. Every card says which situation put it there, the shelf is
   spread across several of them rather than offering eight answers to one flood, and an
   order with nothing to answer is simply not on it.
-- **A War Room** that only appears while you are fighting: major offensives, holding
-  actions, mobilisation, strikes on logistics, a total war economy. These move the front,
-  the exhaustion and the casualty count directly, not just your national statistics.
+- **A War Room** that only appears while you are fighting — **57 orders deep**, and most of
+  them move the front, the exhaustion and the casualty count directly rather than only your
+  national statistics. Not just *how hard* to fight but *how*: `Mount an Amphibious Landing`,
+  `Drop Behind the Line`, `Run a Deception Plan`, `Win the Artillery Duel`, `Invest the City`,
+  `Trade Space for Time`, `Roll Back Their Air Defence`, `Escort the Convoys`, `Repair the
+  Railheads`, `Commit the Strategic Reserve`, `Relieve the Front Commander`. And what is done
+  with the ground and the people once it is taken: `Declare Your War Aims`, `Set the Prisoner
+  Policy`, `Screen the Occupied Districts`, `Feed the Districts You Hold`, `Exchange the
+  Dead`, `Requisition What You Need`.
+- **Wars are named for what they were about.** Not "Russian–Romanian War" but *the Carpathians
+  War*, *the War for the Red Sea*, *the Aegean War*, *the American Intervention in Cuba* —
+  built from the theatre the fighting is actually in, the declared cause, and whether this
+  has happened here before, so the second one is *the Second Caucasus War*.
 - **Two budgets, and a credit line.** Orders are paid from cash plus borrowing headroom
   scaled to your GDP and institutional credibility. A deficit costs interest and unrest;
   at the ceiling an emergency programme imposes the adjustment for you. It is never a
@@ -114,11 +125,47 @@ events at you, wars grind forward, and the books get balanced.
   Union and the Digital Concord — so a run can end with an alliance map that no longer
   looks like the one it started from.
 
+### Treaties, and what paper is worth
+
+There was a `treaties` array in the save from the first commit. One order wrote to it and
+nothing ever read it. It is now a system:
+
+- **Seven kinds of paper** — non-aggression, trade and investment, intelligence-sharing,
+  basing and transit, mutual defence, extended deterrence, full alliance — each with a
+  relation it needs before anybody will sign, a term it runs for, and something it is
+  actually worth every quarter (a trade treaty pays, an intelligence pact shows you things,
+  a basing agreement keeps your army ready).
+- **They expire.** A treaty nobody renews lapses quietly, which is how most of them end. The
+  panel tells you which are inside four quarters of the clock.
+- **They are believed, or they are not.** Every treaty carries a credibility that rises each
+  quarter it is kept, jumps when it is honoured, and collapses when a call is refused.
+- **You can act on all of it**: propose any kind, renew the expiring ones, tear one up (and
+  watch every *other* government holding your signature revise its opinion), hold joint
+  exercises, standardise the arsenals, stand up a joint intelligence cell, convene the
+  alliance, underwrite an ally's deficit, open your arsenal to them, or say out loud, in
+  terms nobody can walk back, exactly what you would do if they were attacked.
+
+### Allies who actually turn up
+
+- **A defence pact pulls real partners into real wars.** When somebody attacks a country
+  you have paper with, you are in it — the chance built from the weight of the treaty, how
+  much either side believes it, and how badly it would go for them.
+- **A defence pact does not cover a war you started. A full alliance does.** That single
+  distinction is the reason to pay for the more expensive one.
+- **Invoke the Treaties** calls everyone at once, and you find out in one afternoon what the
+  paper was worth. Refusing an obligation you actually signed destroys it — and costs you
+  with everybody else who has your signature on something.
+- **Allies who stay out still send money and materiel** every quarter, readily to a defender
+  and reluctantly to an aggressor.
+
 ### The world panel
 
 Borders move, states break apart and governments change sides whether or not you are
 watching. The centre column carries a panel that shows it, in three faces:
 
+- **Treaties** — every piece of paper you hold, how long it has left, how much either side
+  believes it, exactly who would come if you were attacked and by what obligation, and the
+  wars currently being fought with the flags of both sides.
 - **Alignments** — every bloc on the board with its live membership and its share of world
   power, which of them you are party to, who has changed sides lately, and which countries
   the rest of the world has started to treat as a threat.
@@ -528,7 +575,7 @@ assets/fonts/         the font subsets those two faces need
 scripts/serve.js      dev server, zero dependencies
 src/
   data/
-    nations.js        the world: 56 countries, blocs, doctrines, relation anchors
+    nations.js        the world: 56 countries with capitals, blocs, doctrines, anchors
     geography.js      hand-digitised continent outlines for the map
     scenarios.js      the era registry — a second era is a data file, not a rewrite
   engine/
@@ -548,6 +595,10 @@ src/
     chronicle.js      the page a textbook writes from the run
     territory.js      the land grid, the outlines traced out of it, and the front
     coalitions.js     threat, balancing coalitions, and containment
+    treaties.js       the paper: kinds, terms, credibility, allies, aid
+    alliances.js      the Alliances tab — proposing, renewing, invoking, tearing up
+    waroperations.js  the War Room at the operational level
+    warnames.js       what a war gets called, and why
     quickorders.js    the situational quick catalogue
     programmes.js     the standing catalogue: full multi-year programmes
     statecraft.js     secession, conquest, land sales, and changing sides
@@ -580,8 +631,8 @@ src/
     setup.js          new-game screen
     game.js           command screen: dashboard, inspector, feed, planner
     dom.js, store.js  helpers and persistence
-tests/                engine, orders, politics, endgame, territory, coalitions,
-                      worldview, AI-boundary, world and translation tests
+tests/                engine, orders, treaties, politics, endgame, territory,
+                      coalitions, worldview, AI-boundary, world and translation tests
 ```
 
 The simulation (`src/engine/`, `src/data/`) has no DOM dependency and runs under plain Node,

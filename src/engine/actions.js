@@ -14,18 +14,30 @@ import { neighboursOf } from './territory.js';
 import { threatOf } from './coalitions.js';
 import { QUICK_ORDERS } from './quickorders.js';
 import { PROGRAMMES } from './programmes.js';
+import { ALLIANCE_ORDERS } from './alliances.js';
+import { WAR_OPERATIONS } from './waroperations.js';
+import { canSign as canSignTreaty } from './treaties.js';
 import { permits } from './constitution.js';
 
+/**
+ * The order categories, in the order they appear on the strip.
+ *
+ * Icons are chosen for what they say at a glance rather than for decoration —
+ * a chain for the paper that binds you, a shield for the treaties that make
+ * somebody else's war yours, a flag for the room you only enter while fighting.
+ */
 export const CATEGORIES = [
   { id: 'quick', name: 'Quick', icon: '⚡', synthetic: true },
-  { id: 'economy', name: 'Economy', icon: '₴' },
+  { id: 'economy', name: 'Economy', icon: '▦' },
+  { id: 'society', name: 'Society', icon: '⚕' },
+  { id: 'domestic', name: 'Domestic', icon: '⌂' },
   { id: 'military', name: 'Military', icon: '⚔' },
   { id: 'diplomacy', name: 'Diplomacy', icon: '⚖' },
-  { id: 'domestic', name: 'Domestic', icon: '⌂' },
+  { id: 'alliances', name: 'Alliances', icon: '⛓' },
   { id: 'intelligence', name: 'Intelligence', icon: '◈' },
   { id: 'technology', name: 'Technology', icon: '⚛' },
   // Only offered while there is a war to run.
-  { id: 'war', name: 'War room', icon: '✦', wartimeOnly: true },
+  { id: 'war', name: 'War room', icon: '⚑', wartimeOnly: true },
 ];
 
 export const ACTIONS = [
@@ -1010,6 +1022,27 @@ function joinableFor(game, blocId) {
 ACTIONS.push(...QUICK_ORDERS);
 ACTIONS.push(...PROGRAMMES);
 ACTIONS.push(...ALIGNMENT_ORDERS);
+ACTIONS.push(...ALLIANCE_ORDERS);
+ACTIONS.push(...WAR_OPERATIONS);
+
+/**
+ * Society is carved out of the domestic pile rather than invented: health,
+ * schools, welfare, culture and the machinery of a functioning population are a
+ * different job from policing and public order, and a tab of forty domestic
+ * orders was two tabs pretending to be one.
+ */
+const SOCIETY_IDS = new Set([
+  'healthcare-programme', 'education-reform', 'public-health-campaign', 'urban-renewal',
+  'rural-programme', 'disaster-agency', 'truth-commission', 'policing-reform',
+  'public-broadcaster', 'social-spending', 'housing-programme', 'pension-overhaul',
+  'immigration-programme', 'language-policy', 'civil-service-reform', 'youth-jobs',
+  'rent-freeze', 'meet-organisers', 'release-detainees', 'riot-inquiry',
+  'open-archives', 'fuel-subsidy', 'cultural-programme', 'diaspora-strategy',
+  'research-universities', 'brain-gain', 'water-programme', 'refugee-compact',
+]);
+for (const action of ACTIONS) {
+  if (SOCIETY_IDS.has(action.id)) action.category = 'society';
+}
 
 /**
  * What puts each of the founding programmes on the desk.
@@ -1112,7 +1145,10 @@ export function actionsInCategory(categoryId, game = null, tags = null) {
  */
 export function targetedActionsFor(game, targetId, limit = 12) {
   const pool = ACTIONS.filter(
-    (a) => a.target === 'nation' && (!a.available || a.available(game)) && actionAvailability(game, a, targetId).ok,
+    (a) => a.target === 'nation'
+      && (!a.available || a.available(game))
+      && (!a.availableAgainst || a.availableAgainst(game, targetId))
+      && actionAvailability(game, a, targetId).ok,
   );
   return rankShelf(game, pool, limit, situationTags(game));
 }
@@ -1406,6 +1442,17 @@ export function actionAvailability(game, action, targetId = null) {
     return { ok: false, reason: action.alignment?.join
       ? 'Nobody inside is proposing your membership'
       : 'Not something you are party to' };
+  }
+  // Some orders are only on the table against particular countries — a treaty
+  // they would actually sign, an ally you actually have.
+  if (action.availableAgainst && targetId && !action.availableAgainst(game, targetId)) {
+    return {
+      ok: false,
+      reason: action.formsPact
+        ? (canSignTreaty(game, game.playerId, targetId, action.formsPact).reason
+            || 'They would not sign that')
+        : 'Not something that applies to them',
+    };
   }
   if (targetId === game.playerId) {
     return { ok: false, reason: 'Cannot target your own country' };

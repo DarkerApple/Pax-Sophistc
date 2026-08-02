@@ -9,6 +9,15 @@ import { annexOccupied, concludeWar, declareWar, findWar, pressWar } from './war
 import { realign } from './statecraft.js';
 import { chargeExit, noteAccession, open as openCommitment } from './commitments.js';
 import { hardenAgainst } from './intel.js';
+import {
+  TREATY_KINDS,
+  abrogate as abrogateTreaty,
+  invoke as invokeTreaties,
+  renew as renewTreaty,
+  sign as signTreaty,
+  treatiesFor,
+  treatyBetween,
+} from './treaties.js';
 
 /** The first war this country is fighting, for orders that need no target. */
 function activeWarFor(game, id) {
@@ -182,14 +191,58 @@ export function resolveAction(game, rng, mods, order, actorId = game.playerId) {
     }
   }
 
+  // Paper. `formsPact` names the kind of treaty an order signs; the module owns
+  // the diplomatic wash, the term and what it is worth every quarter after.
   if (action.formsPact && succeeded && targetId) {
-    game.treaties.push({
-      id: `pact-${game.turn}-${actorId}-${targetId}`,
-      kind: 'defence',
-      members: [actorId, targetId],
-      signedTurn: game.turn,
-    });
-    outcome.notes.push('Mutual defence obligations now bind both parties.');
+    const kindId = action.formsPact === true ? 'defence' : action.formsPact;
+    const treaty = signTreaty(game, actorId, targetId, kindId, rng);
+    if (treaty) {
+      outcome.treaty = { id: treaty.id, kind: treaty.kind, expiresTurn: treaty.expiresTurn };
+      outcome.notes.push(
+        `${TREATY_KINDS[kindId].name}: ${treaty.expiresTurn - game.turn} quarters, renewable.`,
+      );
+    }
+  }
+
+  // Tearing paper up, and calling it in.
+  if (action.abrogates && succeeded && targetId) {
+    const existing = treatyBetween(game, actorId, targetId, action.abrogates === true ? null : action.abrogates);
+    if (existing) {
+      const done = abrogateTreaty(game, existing.id, actorId);
+      outcome.abrogated = done.ok ? existing.kind : null;
+    } else {
+      outcome.notes.push('There was nothing to withdraw from.');
+    }
+  }
+  // Keeping the paper alive, and making the room say out loud that it means it.
+  if (action.renewsTreaties && succeeded) {
+    const due = treatiesFor(game, actorId).filter((tr) => tr.expiresTurn - game.turn <= 6);
+    for (const treaty of due) renewTreaty(game, treaty.id);
+    outcome.renewed = due.length;
+    outcome.notes.push(due.length
+      ? `${due.length} treaty(ies) renewed.`
+      : 'Nothing was close enough to expiry to be worth the trip.');
+  }
+  if (action.strengthensTreaties && succeeded) {
+    let moved = 0;
+    for (const treaty of treatiesFor(game, actorId)) {
+      if (targetId && !treaty.members.includes(targetId)) continue;
+      treaty.credibility = clamp(treaty.credibility + action.strengthensTreaties, 0, 100);
+      moved += 1;
+    }
+    if (moved) outcome.notes.push(`${moved} commitment(s) are now believed rather than merely signed.`);
+  }
+  if (action.invokesTreaties && succeeded) {
+    const war = targetId ? findWar(game, actorId, targetId) : activeWarFor(game, actorId);
+    if (war) {
+      const answer = invokeTreaties(game, war, actorId, rng);
+      outcome.invocation = { joined: answer.joined.map((a) => a.id), refused: answer.refused.length };
+      outcome.notes.push(answer.joined.length
+        ? `${answer.joined.length} ally(ies) answered the call.`
+        : 'Nobody answered.');
+    } else {
+      outcome.notes.push('There is no war to call anybody into.');
+    }
   }
 
   // War-room orders move the front itself, not just the national statistics.

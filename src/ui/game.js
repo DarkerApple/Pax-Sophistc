@@ -74,6 +74,8 @@ import { CLAUSE_TYPES, congressOf, lobby, propose, tally } from '../engine/congr
 import { ambitionProgress, revealAmbitions } from '../engine/ambitions.js';
 import { chronicle, chronicleText } from '../engine/chronicle.js';
 import { concludeTerm, electionState, inheritance } from '../engine/lifecycle.js';
+import { TREATY_KINDS, alliesOf, treatyReport } from '../engine/treaties.js';
+import { formalName } from '../engine/warnames.js';
 import { MAP_FOCUSES, VIEW_MODES, WorldMap, alignmentOf, legendFor } from './map.js';
 import { KEY_GROUPS, groupLabel, keyLabel, keybindsIn } from './keys.js';
 import { LANGUAGES, currentLanguage, t, tAction, tLabel, tModifier, tNation } from '../i18n/index.js';
@@ -166,6 +168,53 @@ const RANK_METRICS = [
     pick: (game, s) => s.nukes, format: (v) => v.toLocaleString() },
 ];
 
+/** Plain-language notes for the category strip. */
+const CATEGORY_HINTS = {
+  quick: 'One-capital orders, chosen for what is happening this quarter.',
+  economy: 'Growth, money, industry and the books.',
+  society: 'Health, schools, housing, culture — the people rather than the police.',
+  domestic: 'Order, the constitution, the machinery of governing.',
+  military: 'Force: what you build, where you put it, how ready it is.',
+  diplomacy: 'Standing, mediation, aid, and pressure short of force.',
+  alliances: 'Treaties and blocs: signing them, keeping them, calling them in.',
+  intelligence: 'What you know about them, and what they know about you.',
+  technology: 'Research, industry and the long bets.',
+  war: 'Only while you are fighting. These move the front itself.',
+};
+
+/** The ways an order shelf can be ordered. */
+const SORTS = [
+  { id: 'relevance', name: 'Relevance', hint: 'What the quarter is actually doing, most pressing first.' },
+  { id: 'odds', name: 'Odds', hint: 'Most likely to succeed first.' },
+  { id: 'cost', name: 'Cost', hint: 'Cheapest first.' },
+  { id: 'capital', name: 'Capital', hint: 'Least political capital first.' },
+  { id: 'name', name: 'A–Z', hint: 'Alphabetical, for when you know what you are looking for.' },
+];
+
+/**
+ * Order the shelf.
+ *
+ * Relevance keeps the situational ranking and merely floats the suggestions;
+ * everything else is a stable sort on one figure, so the situational order is
+ * still the tie-break underneath.
+ */
+function sortCatalogue(catalogue, sortBy, { game, state, mods, recommended }) {
+  const byRecommended = (a, b) => Number(recommended.has(b.id)) - Number(recommended.has(a.id));
+  switch (sortBy) {
+    case 'odds':
+      return [...catalogue].sort((a, b) =>
+        successChance(game, b, game.playerId, null, mods) - successChance(game, a, game.playerId, null, mods));
+    case 'cost':
+      return [...catalogue].sort((a, b) => actionCost(a, state) - actionCost(b, state));
+    case 'capital':
+      return [...catalogue].sort((a, b) => (a.pc || 0) - (b.pc || 0));
+    case 'name':
+      return [...catalogue].sort((a, b) => tAction(a).localeCompare(tAction(b)));
+    default:
+      return [...catalogue].sort(byRecommended);
+  }
+}
+
 export class GameScreen {
   constructor(root, app) {
     this.root = root;
@@ -196,6 +245,10 @@ export class GameScreen {
     this.endTab = 'verdict';
     this.standingAgain = null;
     this.rankMetric = 'power';
+    // How the order shelf is ordered. Relevance is what the situational
+    // ranking already decided; the rest are for a player with a specific
+    // problem — no money, no capital, or one bad quarter to survive.
+    this.sortBy = 'relevance';
     // Which pane a phone is showing. Ignored above the breakpoint, where all
     // three columns are on screen at once.
     this.pane = 'map';
@@ -553,7 +606,9 @@ export class GameScreen {
         h('span.inspector__flag', def.flag),
         h('div',
           h('div.inspector__name', tNation(def)),
-          h('div.inspector__sub', `${tNation(def, 'government')} · #${rank} / ${Object.keys(game.nations).length}`),
+          h('div.inspector__sub',
+            tNation(def, 'capital') ? `◉ ${tNation(def, 'capital')} · ` : '',
+            `${tNation(def, 'government')} · #${rank} / ${Object.keys(game.nations).length}`),
         ),
       ),
       isPlayer
@@ -1091,6 +1146,7 @@ export class GameScreen {
   #worldPanel() {
     const tabs = [
       ['alignments', t('world.alignments', 'Alignments')],
+      ['treaties', t('world.treaties', 'Treaties')],
       ['borders', t('world.borders', 'Borders')],
       ['rankings', t('world.rankings', 'Rankings')],
     ];
@@ -1103,9 +1159,10 @@ export class GameScreen {
           }, label),
         ),
       ),
-      this.worldTab === 'borders' ? this.#bordersTab()
-        : this.worldTab === 'rankings' ? this.#rankingsTab()
-          : this.#alignmentsTab(),
+      this.worldTab === 'treaties' ? this.#treatiesTab()
+        : this.worldTab === 'borders' ? this.#bordersTab()
+          : this.worldTab === 'rankings' ? this.#rankingsTab()
+            : this.#alignmentsTab(),
     );
   }
 
@@ -1191,6 +1248,114 @@ export class GameScreen {
             ),
             h('p.panel__note',
               t('world.wearyNote', 'The higher this reads, the more readily others will join a war against them — including against you.')),
+          )
+        : null,
+    );
+  }
+
+  /**
+   * Your paper: what you are bound to, who is bound to you, and how long each
+   * of them has left to run. There was a treaties array in the save from the
+   * first commit and nothing ever showed it.
+   */
+  #treatiesTab() {
+    const game = this.game;
+    const report = treatyReport(game);
+    const wars = game.wars.filter((w) => w.active);
+
+    return h('div.worldbody',
+      h('h3.subhead', t('treaty.yours', 'What you are bound to')),
+      report.live.length
+        ? report.live.map((treaty) =>
+            h('div.treaty', { class: treaty.expiringSoon ? 'treaty is-expiring' : 'treaty' },
+              h('div.treaty__head',
+                h('span.treaty__icon', treaty.kindSpec.icon),
+                h('div',
+                  h('div.treaty__kind', t(`treatyKind.${treaty.kind}`, treaty.kindSpec.name)),
+                  h('button.treaty__with', {
+                    onclick: () => this.#openDetail(treaty.other),
+                    onpointerenter: () => this.#onMapHover(treaty.other),
+                    onpointerleave: () => this.#onMapHover(null),
+                  }, `${treaty.otherDef?.flag || ''} ${tNation(treaty.otherDef)}`),
+                ),
+                h('div.treaty__clock',
+                  h('span.treaty__left', t('treaty.left', '{n}q left', { n: treaty.quartersLeft })),
+                  h('span.treaty__cred', {
+                    title: t('treaty.credHint',
+                      'How much either side believes it. Honouring a call raises it; refusing one destroys it.'),
+                  }, t('treaty.credibility', 'believed {n}%', { n: Math.round(treaty.credibility) })),
+                ),
+              ),
+              h('p.treaty__blurb', t(`treatyKind.${treaty.kind}Blurb`, treaty.kindSpec.blurb)),
+              treaty.expiringSoon
+                ? h('div.treaty__warn', t('treaty.expiringSoon',
+                    'Expires in {n} quarters. Renew it from the Alliances tab or watch it lapse.',
+                    { n: treaty.quartersLeft }))
+                : null,
+            ),
+          )
+        : h('p.panel__note',
+            t('treaty.none',
+              'You have signed nothing. Propose a treaty from the Alliances tab — a non-aggression pact costs almost nothing and a defence pact changes who fights your wars.')),
+
+      h('h3.subhead', t('treaty.whoComes', 'Who would come if you were attacked')),
+      report.allies.length
+        ? h('div.allies',
+            report.allies.map((ally) =>
+              h('button.ally', {
+                onclick: () => this.#openDetail(ally.id),
+                onpointerenter: () => this.#onMapHover(ally.id),
+                onpointerleave: () => this.#onMapHover(null),
+              },
+                h('span.ally__flag', defOf(game, ally.id)?.flag || '·'),
+                h('span.ally__name', tNation(defOf(game, ally.id))),
+                h('span.ally__via', ally.via === 'bloc'
+                  ? t(`bloc.${ally.kind}`, BLOCS[ally.kind]?.name || ally.kind)
+                  : t(`treatyKind.${ally.kind}`, TREATY_KINDS[ally.kind]?.name || ally.kind)),
+              ),
+            ),
+          )
+        : h('p.panel__note',
+            t('treaty.alone', 'Nobody is obliged to come. That is a position, but it should be a chosen one.')),
+
+      wars.length
+        ? h('div',
+            h('h3.subhead', t('treaty.warsNow', 'Wars being fought')),
+            wars.slice(0, 6).map((war) => h('div.warcard',
+              h('div.warcard__head',
+                h('span.warcard__name', war.name),
+                h('span.warcard__theatre', war.theatre || ''),
+              ),
+              h('div.warcard__sides',
+                h('span.warcard__side',
+                  war.attackers.map((id) => defOf(game, id)?.flag || '·').join(' ')),
+                h('span.warcard__vs', 'vs'),
+                h('span.warcard__side',
+                  war.defenders.map((id) => defOf(game, id)?.flag || '·').join(' ')),
+              ),
+              h('div.warcard__meta',
+                t('treaty.warMeta', '{n} states · {c}k casualties · since {year}', {
+                  n: war.attackers.length + war.defenders.length,
+                  c: Math.round((war.casualties || 0) / 1000),
+                  year: war.startYear ?? game.year,
+                })),
+            )),
+          )
+        : null,
+
+      report.lapsed.length
+        ? h('div',
+            h('h3.subhead', t('treaty.lapsedHead', 'Paper that is no longer paper')),
+            report.lapsed.map((treaty) =>
+              h('div.relation',
+                h('span.relation__flag', treaty.otherDef?.flag || '·'),
+                h('span.relation__name', tNation(treaty.otherDef)),
+                h('span.relation__value', { style: { color: 'var(--muted)' } },
+                  treaty.ending === 'abrogated'
+                    ? t('treaty.wasTorn', 'torn up')
+                    : t('treaty.wasLapsed', 'lapsed')),
+              ),
+            ),
           )
         : null,
     );
@@ -1454,8 +1619,11 @@ export class GameScreen {
     // Read the world once, not once per card: every tab is now filtered and
     // ranked by what is actually happening, so this is the hot path.
     const tags = situationTags(game);
-    const catalogue = actionsInCategory(this.category, game, tags)
-      .sort((a, b) => Number(recommended.has(b.id)) - Number(recommended.has(a.id)));
+    const catalogue = sortCatalogue(
+      actionsInCategory(this.category, game, tags),
+      this.sortBy,
+      { game, state, mods: gameModifiers(game), recommended },
+    );
 
     return h('section.panel.panel--planner',
       h('div.panel__titlebar',
@@ -1512,8 +1680,23 @@ export class GameScreen {
         categories.map((c) =>
           h('button.chip', {
             class: `chip${this.category === c.id ? ' is-active' : ''}${c.wartimeOnly ? ' chip--war' : ''}`,
+            title: t(`categoryHint.${c.id}`, CATEGORY_HINTS[c.id] || ''),
             onclick: () => { this.category = c.id; this.render(); },
-          }, `${c.icon} ${tLabel('categories', c.id, c.name)}`),
+          },
+            h('span.chip__icon', c.icon),
+            h('span.chip__label', tLabel('categories', c.id, c.name)),
+          ),
+        ),
+      ),
+
+      h('div.sortbar',
+        h('span.sortbar__label', t('orders.sortBy', 'Sort')),
+        SORTS.map((sort) =>
+          h('button.sortbar__btn', {
+            class: this.sortBy === sort.id ? 'sortbar__btn is-active' : 'sortbar__btn',
+            title: t(`sort.${sort.id}Hint`, sort.hint),
+            onclick: () => { this.sortBy = sort.id; this.render(); },
+          }, t(`sort.${sort.id}`, sort.name)),
         ),
       ),
 
@@ -1936,7 +2119,9 @@ export class GameScreen {
           h('span.detail__flag', def.flag),
           h('div',
             h('h2.modal__title', tNation(def)),
-            h('div.detail__sub', `${tNation(def, 'government')} · ${tNation(def, 'leaderTitle')} · ${state.population.toFixed(0)}M`),
+            h('div.detail__sub',
+              tNation(def, 'capital') ? `◉ ${tNation(def, 'capital')} · ` : '',
+              `${tNation(def, 'government')} · ${tNation(def, 'leaderTitle')} · ${state.population.toFixed(0)}M`),
           ),
         ),
         h('p.detail__brief', tNation(def, 'brief')),

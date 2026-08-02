@@ -17,6 +17,7 @@ import { noteQuarter, updateNemesis } from './nemesis.js';
 import { decayIntel, recordIntel } from './intel.js';
 import { liveObjectives, meets, reviewDue, reviewMandate } from './mandate.js';
 import { tickCommitments } from './commitments.js';
+import { alliedAid, tickTreaties } from './treaties.js';
 import { congressDue, congressOutcome, convene, resolveCongress } from './congress.js';
 import { ambitionBonus } from './ambitions.js';
 import { electionState } from './lifecycle.js';
@@ -161,7 +162,12 @@ export function advanceTurn(game, { orders = [], decisionChoice = null } = {}) {
     relationDrift(game, rng, mods);
     tensionDrift(game, rng, mods);
 
-    // 7. The rivalry, the fog, and the four creditors of political capital.
+    // 7. Paper: treaties expire, pay out, and pull materiel toward whoever is
+    //    actually fighting.
+    report.treaties = tickTreaties(game, rng);
+    report.aid = alliedAid(game, rng);
+
+    // 8. The rivalry, the fog, and the four creditors of political capital.
     noteQuarter(game, report);
     report.nemesis = updateNemesis(game, rng);
     decayIntel(game);
@@ -184,7 +190,7 @@ export function advanceTurn(game, { orders = [], decisionChoice = null } = {}) {
       report.congressResults = resolveCongress(game, rng);
     }
 
-    // 8. Snapshot + endgame check.
+    // 9. Snapshot + endgame check.
     for (const state of Object.values(game.nations)) {
       const snapshot = {
         turn: game.turn,

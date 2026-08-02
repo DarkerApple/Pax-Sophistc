@@ -20,6 +20,7 @@
 // same arithmetic, and a runaway AI conqueror will find the board turning on it
 // just as fast.
 
+import { alliesOf, treatyBetween } from './treaties.js';
 import { t, tNation } from '../i18n/index.js';
 import {
   adjustRelation,
@@ -190,13 +191,19 @@ export function opposingCoalition(game, rng, aggressorId, victimId, mods = {}) {
   for (const id of sovereignIds(game)) {
     if (id === aggressorId || id === victimId) continue;
 
-    // A defence pact is still a defence pact.
-    const theirBlocs = game.blocMembership?.[id] || defOf(game, id)?.blocs || [];
-    const pact = ['nato', 'csto', 'usAllied'].some(
-      (b) => theirBlocs.includes(b) && liveBlocs.includes(b),
-    );
-    if (pact) {
-      if (rng.bool(0.8)) joiners.push({ id, reason: 'treaty' });
+    // A defence pact is still a defence pact — and now it is a real one: the
+    // bilateral paper the victim actually signed, weighed by how serious it is
+    // and how much of it either side believes.
+    const bond = alliesOf(game, victimId).find((a) => a.id === id);
+    if (bond) {
+      const paper = treatyBetween(game, victimId, id);
+      const credibility = (paper?.credibility ?? 60) / 100;
+      const chance = clamp(
+        0.45 + bond.weight * 0.08 + credibility * 0.3 + getRelation(game, id, victimId) / 500,
+        0.1,
+        0.95,
+      );
+      if (rng.bool(chance)) joiners.push({ id, reason: 'treaty', via: bond.via, kind: bond.kind });
       continue;
     }
 

@@ -222,6 +222,7 @@ export class WorldMap {
     scene.append(this.#links(game));
 
     const nodes = svg('g', { class: 'map-nodes' });
+    const capitals = svg('g', { class: 'map-capitals' });
     const labels = svg('g', { class: 'map-labels' });
     // Big powers painted first so smaller neighbours land on top and stay clickable.
     const ranked = sovereignIds(game)
@@ -232,9 +233,11 @@ export class WorldMap {
       const node = this.#node(game, id, power / maxPower);
       nodes.append(node);
       labels.append(this.#label(game, id, node.dataset));
+      const seat = this.#capital(game, id);
+      if (seat) capitals.append(seat);
       this.nodeEls.set(id, node);
     }
-    scene.append(nodes, labels);
+    scene.append(nodes, capitals, labels);
 
     this.root.append(scene);
     this.#applyCamera();
@@ -507,6 +510,28 @@ export class WorldMap {
     return text;
   }
 
+  /**
+   * The seat of government, drawn at the coordinates every country is already
+   * plotted at — because those coordinates *are* the capital. It only appears
+   * once you have zoomed in far enough for the name to be worth reading.
+   */
+  #capital(game, id) {
+    const def = defOf(game, id);
+    const capital = tNation(def, 'capital');
+    if (!capital) return null;
+    const [x, y] = project(def.lat, def.lon);
+
+    const group = svg('g', { class: 'map-capital' });
+    group.dataset.capitalFor = id;
+    // A ringed dot: the conventional map mark for a capital, and it reads at a
+    // glance against the country dot it sits inside.
+    group.append(svg('circle', { cx: x, cy: y, r: 1.6, class: 'map-capital__dot' }));
+    const text = svg('text', { x, y: y - 7, 'text-anchor': 'middle', class: 'map-capital__name' });
+    text.textContent = capital;
+    group.append(text);
+    return group;
+  }
+
   // ── Camera ───────────────────────────────────────────────────────────────
 
   #bindCamera() {
@@ -698,6 +723,18 @@ export class WorldMap {
       label.setAttribute('font-size', String(11 * inv));
       // Everything gets a name once you have zoomed in far enough to read it.
       label.style.opacity = label.dataset.major === 'true' || zoom >= 1.8 ? '' : '0';
+    }
+    // Capitals are detail: they only earn their space once you are properly in.
+    for (const group of this.root.querySelectorAll('.map-capitals g')) {
+      const dot = group.querySelector('circle');
+      const name = group.querySelector('text');
+      const def = defOf(this.game, group.dataset.capitalFor);
+      if (!def || !dot || !name) continue;
+      const [, y] = project(def.lat, def.lon);
+      dot.setAttribute('r', String(1.6 * inv));
+      name.setAttribute('y', String(y - 7 * inv));
+      name.setAttribute('font-size', String(8.5 * inv));
+      group.style.opacity = zoom >= 3 ? '' : '0';
     }
     for (const el of this.root.querySelectorAll('.map-oceans text')) {
       el.setAttribute('font-size', String(13 * inv));

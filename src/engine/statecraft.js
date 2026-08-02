@@ -83,6 +83,28 @@ const GOVERNMENTS = [
 
 const NEW_STATE_FLAG = '🏴';
 
+// Whatever town the provisional government happened to be sitting in.
+const SEAT_PREFIX = [
+  ['Novo', '노보'], ['Port', '포르트'], ['Fort', '포르'], ['New', '뉴'],
+  ['Saint', '생'], ['Alto', '알토'], ['Bel', '벨'], ['Ost', '오스트'],
+];
+const SEAT_STEM = [
+  ['grad', '그라드'], ['burg', '부르크'], ['ton', '턴'], ['heim', '하임'],
+  ['sk', '스크'], ['abad', '아바드'], ['ville', '빌'], ['pol', '폴'],
+];
+
+/** A capital for a state that did not have one this morning. */
+function inventSeat(coreEn, coreKo, rng) {
+  if (rng.bool(0.45)) {
+    const [preEn, preKo] = rng.pick(SEAT_PREFIX);
+    return { en: `${preEn} ${coreEn}`, ko: `${preKo} ${coreKo}` };
+  }
+  const [sufEn, sufKo] = rng.pick(SEAT_STEM);
+  const stem = coreEn.replace(/\s+/g, '').slice(0, 6);
+  const stemKo = coreKo.slice(0, 4);
+  return { en: `${stem}${sufEn}`, ko: `${stemKo}${sufKo}` };
+}
+
 /** Which way the breakaway lies from the capital it is leaving. */
 function bearing(parentSeat, centre) {
   const dLat = centre.lat - parentSeat.lat;
@@ -179,6 +201,7 @@ export function secede(game, parentId, rng, { cause = 'unrest', share = null } =
 
   const name = inventName(parentDef, centre, rng);
   const government = rng.pick(GOVERNMENTS);
+  const seat = inventSeat(name.shortEn, name.shortKo, rng);
 
   const def = registerNation({
     id,
@@ -187,6 +210,7 @@ export function secede(game, parentId, rng, { cause = 'unrest', share = null } =
     flag: NEW_STATE_FLAG,
     lat: Number(centre.lat.toFixed(2)),
     lon: Number(centre.lon.toFixed(2)),
+    capital: seat.en,
     region: parentDef.region,
     government: government.en,
     leaderTitle: government.title.en,
@@ -210,6 +234,7 @@ export function secede(game, parentId, rng, { cause = 'unrest', share = null } =
     i18n: {
       ko: {
         name: name.ko,
+        capital: seat.ko,
         adjective: name.adjectiveKo,
         government: government.ko,
         leaderTitle: government.title.ko,

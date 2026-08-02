@@ -27,6 +27,8 @@ import {
 } from './territory.js';
 import { annexNation, isSovereign } from './statecraft.js';
 import { balancingChance, opposingCoalition, recordAggression } from './coalitions.js';
+import { alliedAid, alliesOf, invoke, treatyBetween } from './treaties.js';
+import { nameWar } from './warnames.js';
 
 const HOME_GROUND_BONUS = 1.18;
 // Wars used to grind for twenty quarters. They now reach a verdict in roughly
@@ -51,9 +53,17 @@ export function declareWar(game, attackerId, defenderId, { rng, reason = 'unspec
   const defender = NATIONS_BY_ID[defenderId];
   if (!attacker || !defender) return null;
 
+  // Named for the ground, the cause or the season rather than by joining two
+  // adjectives with a dash — and numbered if this theatre has seen it before.
+  const naming = nameWar(game, attackerId, defenderId, { reason, rng });
+
   const war = {
     id: `war-${game.turn}-${attackerId}-${defenderId}`,
-    name: t('war.name', '{a}–{b} War', { a: tNation(attacker, 'adjective'), b: tNation(defender, 'adjective') }),
+    name: naming.name,
+    baseName: naming.name.replace(/^The (Second |Third |Fourth |Fifth |Sixth )?/, ''),
+    theatre: naming.theatre,
+    shape: naming.shape,
+    startYear: game.year,
     attackers: [attackerId],
     defenders: [defenderId],
     startTurn: game.turn,
@@ -75,6 +85,20 @@ export function declareWar(game, attackerId, defenderId, { rng, reason = 'unspec
   const joiners = rng ? opposingCoalition(game, rng, attackerId, defenderId, mods) : [];
   for (const joiner of joiners) war.defenders.push(joiner.id);
   war.balancers = joiners.filter((j) => j.reason === 'balance').map((j) => j.id);
+
+  // And the attacker's own allies, if they signed something that covers a war
+  // their friend started. Most defence pacts do not.
+  if (rng) {
+    for (const ally of alliesOf(game, attackerId)) {
+      if (war.attackers.includes(ally.id) || war.defenders.includes(ally.id)) continue;
+      if (ally.kind !== 'alliance') continue;
+      if (rng.bool(0.55 + getRelation(game, attackerId, ally.id) / 400)) {
+        war.attackers.push(ally.id);
+        const paper = treatyBetween(game, attackerId, ally.id, 'alliance');
+        if (paper) paper.credibility = clamp(paper.credibility + 8, 0, 100);
+      }
+    }
+  }
 
   recordAggression(game, attackerId, 'war', 1.4);
 
@@ -539,6 +563,7 @@ export function pressWar(game, war, actorId) {
 export function concludeWar(game, war, rng, kind = 'decisive') {
   war.active = false;
   war.endedTurn = game.turn;
+  war.endedYear = game.year;
 
   const attackersWon = war.warScore > 15;
   const defendersWon = war.warScore < -15;
