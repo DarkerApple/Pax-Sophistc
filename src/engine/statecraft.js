@@ -422,16 +422,23 @@ export function annexNation(game, victimId, conquerorId, rng, { reason = 'conque
     if (otherId === conquerorId) continue;
     adjustRelation(game, conquerorId, otherId, -(rng ? rng.int(10, 30) : 18));
   }
-  // Its wars are over, one way or another.
+  // Its wars are over, one way or another. A conquered belligerent leaves the
+  // fighting but not the record: stripping the last name off a side left the
+  // war with nobody on it, and a war nobody fought is not something the
+  // chronicle, the war card or the ranking tables can say anything about.
   for (const war of game.wars) {
     if (!war.active) continue;
-    war.attackers = war.attackers.filter((id) => id !== victimId);
-    war.defenders = war.defenders.filter((id) => id !== victimId);
-    if (!war.attackers.length || !war.defenders.length) {
+    const attackers = war.attackers.filter((id) => id !== victimId);
+    const defenders = war.defenders.filter((id) => id !== victimId);
+    if (!attackers.length || !defenders.length) {
       war.active = false;
       war.endedTurn = game.turn;
       war.outcome = war.outcome || 'Conquest';
+      war.conquered = [...(war.conquered || []), victimId];
+      continue;
     }
+    war.attackers = attackers;
+    war.defenders = defenders;
   }
 
   logEvent(game, {

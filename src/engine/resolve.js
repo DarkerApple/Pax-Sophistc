@@ -4,12 +4,16 @@
 import { NATIONS_BY_ID } from '../data/nations.js';
 import { ACTIONS_BY_ID, actionCost } from './actions.js';
 import { applyEffect, describeChanges, scaleEffect } from './effects.js';
-import { clamp, getRelation, logEvent } from './state.js';
+import { adjustRelation, clamp, getRelation, logEvent } from './state.js';
 import { annexOccupied, concludeWar, declareWar, findWar, pressWar } from './war.js';
 import { realign } from './statecraft.js';
 import { chargeExit, noteAccession, open as openCommitment } from './commitments.js';
 import { hardenAgainst } from './intel.js';
 import { factionsOf } from './factions.js';
+import { leverage, noteTradeBreak, restoreTies, severTies } from './dependency.js';
+import { DEMANDS, send as sendDemand, settleCounter } from './exchanges.js';
+import { blocCall } from './worldwar.js';
+import { reach } from './reach.js';
 import {
   TREATY_KINDS,
   abrogate as abrogateTreaty,
@@ -320,6 +324,133 @@ export function resolveAction(game, rng, mods, order, actorId = game.playerId) {
     }
   }
 
+  // Commercial statecraft. What an embargo is worth is decided by the web, not
+  // by a constant: the same order against a country that needs you and one that
+  // does not are two different orders wearing the same name.
+  if (action.trade && succeeded && (targetId || action.trade.buffer)) {
+    const spec = action.trade;
+    if (spec.sever && targetId) {
+      const grip = leverage(game, actorId, targetId);
+      const scale = tier === 'critical' ? 1 : tier === 'partial' ? 0.5 : 0.8;
+      const result = severTies(game, actorId, targetId, spec.sever * scale, spec.turns || 8, {
+        by: actorId, label: spec.label,
+      });
+      outcome.trade = { ...result, leverage: grip };
+      if (actorId === game.playerId) noteTradeBreak(game, actorId, targetId, result, spec.label);
+      outcome.notes.push(
+        grip.verdict === 'yours'
+          ? `The leverage runs your way: they lose ${(result[targetId === result.a.id ? 'a' : 'b'].exposure * 100).toFixed(1)}% of their economy's foreign leg, you lose ${(result[targetId === result.a.id ? 'b' : 'a'].exposure * 100).toFixed(1)}%.`
+          : `It cuts both ways, and not in your favour — check who needs whom before the next one.`,
+      );
+      // A secondary sanction closes the target's other arrangements too.
+      if (spec.spillover) {
+        let hit = 0;
+        for (const otherId of Object.keys(game.nations)) {
+          if (otherId === actorId || otherId === targetId) continue;
+          if (getRelation(game, actorId, otherId) < -20) continue;
+          if (!rng.bool(0.3)) continue;
+          severTies(game, otherId, targetId, 0.5, spec.turns || 6, { by: actorId, label: spec.label });
+          hit += 1;
+        }
+        if (hit) outcome.notes.push(`${hit} third countries quietly stopped shipping as well.`);
+      }
+    }
+    if (spec.restore && targetId) {
+      restoreTies(game, actorId, targetId, spec.restore);
+      outcome.notes.push('The arrangement is running again as of this quarter.');
+    }
+    if (spec.insulate && targetId) {
+      // De-risking does not close the tie, it makes losing it cost less later.
+      game.insulation = game.insulation || {};
+      const key = [actorId, targetId].sort().join('|');
+      game.insulation[key] = Math.min(0.8, (game.insulation[key] || 0) + spec.insulate);
+      outcome.notes.push('What you buy from them is no longer what you cannot do without.');
+    }
+  }
+
+  // Propositions put to another government, answered next quarter rather than
+  // this one. The order only ever succeeds at being *sent*.
+  if (action.demand && succeeded && targetId) {
+    const entry = sendDemand(game, actorId, targetId, action.demand);
+    if (entry) {
+      outcome.demand = { id: action.demand, odds: entry.odds, dueTurn: entry.dueTurn };
+      outcome.notes.push(
+        `${DEMANDS[action.demand].name}: their answer arrives next quarter. Your people put it at about ${Math.round(entry.odds * 100)}%.`,
+      );
+    }
+  }
+
+  // Walking into a war that is already running — on either side.
+  if (action.joinsWar && succeeded && targetId) {
+    const war = game.wars.find(
+      (w) => w.active && (w.attackers.includes(targetId) || w.defenders.includes(targetId))
+        && !w.attackers.includes(actorId) && !w.defenders.includes(actorId),
+    );
+    if (war) {
+      const theirSide = war.attackers.includes(targetId) ? 'attackers' : 'defenders';
+      const mySide = action.joinsWar === 'with'
+        ? theirSide
+        : theirSide === 'attackers' ? 'defenders' : 'attackers';
+      war[mySide].push(actorId);
+      const enemies = mySide === 'attackers' ? war.defenders : war.attackers;
+      for (const enemy of enemies) adjustRelation(game, actorId, enemy, -60);
+      game.worldTension = clamp(game.worldTension + 10, 0, 100);
+      if (actorId === game.playerId) game.stats.warsStarted += 1;
+      outcome.warId = war.id;
+      outcome.joinedWar = { warId: war.id, side: mySide, name: war.name };
+      outcome.notes.push(
+        `You are a belligerent in the ${war.name} as of this quarter, on the ${
+          mySide === 'attackers' ? 'attacking' : 'defending'} side. Your reach into that theatre is about ${
+          Math.round(reach(game, actorId, targetId) * 100)}% of what you could bring to your own border.`,
+      );
+    } else {
+      outcome.notes.push('That war ended before the order left the building.');
+    }
+  }
+
+  // The standing council, in session, with the clause read aloud.
+  if (action.blocCall && succeeded) {
+    const war = activeWarFor(game, actorId);
+    if (war) {
+      // A formal call re-opens organisations that had already declined once.
+      war.blocAsked = {};
+      const answered = blocCall(game, war, rng);
+      const joined = answered.flatMap((entry) => entry.joined || []);
+      outcome.blocCall = { joined };
+      outcome.notes.push(joined.length
+        ? `${joined.length} member(s) of your organisations are in the war as of this quarter.`
+        : 'The council met, expressed concern, and adjourned.');
+    } else {
+      outcome.notes.push('There is no war to call anybody into.');
+    }
+  }
+
+  // Everybody in one room, and nobody leaving until it is signed.
+  if (action.generalArmistice && succeeded) {
+    const active = game.wars.filter((w) => w.active);
+    let ended = 0;
+    for (const war of active) {
+      // The bigger the war, the harder it is to stop in one session.
+      const stubborn = 0.25 + Math.min(0.5, war.attackers.length + war.defenders.length) * 0.05;
+      if (!rng.bool(1 - stubborn)) continue;
+      concludeWar(game, war, rng, 'negotiated');
+      ended += 1;
+    }
+    outcome.armistice = ended;
+    if (actorId === game.playerId) game.stats.crisesResolved += ended;
+    outcome.notes.push(ended
+      ? `${ended} war(s) stop this quarter. Whether they stay stopped is next year's problem.`
+      : 'Everybody came. Nobody signed.');
+  }
+
+  // Trading with both sides, escorting your own shipping, shooting at whoever
+  // stops it.
+  if (action.neutrality && succeeded) {
+    const state2 = game.nations[actorId];
+    if (state2) state2.neutralUntil = game.turn + 10;
+    outcome.notes.push('Your neutrality is declared, armed, and now has to be respected by people who did not agree to it.');
+  }
+
   if (action.mediates && succeeded) {
     const active = game.wars.filter((w) => w.active);
     if (active.length) {
@@ -435,6 +566,16 @@ export function resolveDecision(game, rng, mods, choiceId) {
 
   if (choice.escalates && !succeeded && decision.targetId) {
     declareWar(game, decision.targetId, game.playerId, { rng, reason: 'ultimatum rejected' });
+  }
+
+  // A counter-offer is the second half of an exchange: they answered, you have
+  // now answered them, and the proposition finally settles.
+  if (choice.settles && decision.exchangeId) {
+    const settled = settleCounter(game, decision.exchangeId, choice.settles, succeeded, rng);
+    if (settled) {
+      record.exchange = settled;
+      record.exchangeText = settled.text;
+    }
   }
 
   Object.assign(record, {

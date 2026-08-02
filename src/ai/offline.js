@@ -122,6 +122,9 @@ export function offlineBriefing(game, report) {
   const neighbourhood = neighbourhoodParagraph(game, report);
   if (neighbourhood) paragraphs.push(neighbourhood);
 
+  const commerce = commerceParagraph(game, report);
+  if (commerce) paragraphs.push(commerce);
+
   // Dispatches: one per concrete thing that happened, attributed to a desk.
   // An event that has an explanation carries it, because "why" is most of what
   // a desk is for.
@@ -349,6 +352,37 @@ function neighbourhoodParagraph(game, report) {
   return `${lines.join(' ')}${more}`;
 }
 
+/**
+ * The quarter's commerce and correspondence: what closed, what re-opened, and
+ * what other governments said back to you.
+ */
+function commerceParagraph(game, report) {
+  const bits = [];
+
+  if (report.worldWar && !report.worldWar.over) {
+    bits.push(t('brief.general',
+      'The {war} is now a general war. Shipping insurance has doubled, payment systems are closing to whole regions, and the countries not in it are being asked every week why not.',
+      { war: report.worldWar.war.name }));
+  } else if (report.brink) {
+    bits.push(t('brief.brink',
+      '{pct}% of the world’s power is now committed to the {war}. Nobody in the building will say the word, but everybody is thinking it.',
+      { pct: Math.round(report.brink.state.share * 100), war: report.brink.war.name }));
+  }
+
+  const health = report.tradeHealth ?? 1;
+  if (health < 0.94) {
+    bits.push(t('brief.tradeHealth',
+      'Only {pct}% of your foreign commercial arrangements are running. The rest are shut, and the growth figures above already reflect it.',
+      { pct: Math.round(health * 100) }));
+  }
+
+  for (const entry of (report.exchanges || []).slice(0, 2)) {
+    if (entry.text) bits.push(entry.text);
+  }
+
+  return bits.length ? bits.join(' ') : null;
+}
+
 function warParagraph(game, report) {
   const bits = report.wars.map((w) => w.text).filter(Boolean);
   const wars = activeWarsFor(game, game.playerId);
@@ -371,8 +405,12 @@ function buildHeadline(game, report) {
   if (report.wars.some((w) => w.type === 'nuclear')) {
     return t('head.nuclear', 'Nuclear weapons used in anger for the first time since 1945');
   }
+  const general = report.wars.find((w) => w.type === 'world-war');
+  if (general) return t('head.general', 'It is a general war now');
   const warEnd = report.wars.find((w) => w.type === 'war-end');
   if (warEnd) return warEnd.text.split('.')[0];
+  const blocAnswer = report.wars.find((w) => w.type === 'bloc-call');
+  if (blocAnswer) return blocAnswer.text.split('.')[0];
 
   const nation = tNation(player);
 

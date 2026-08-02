@@ -10,7 +10,7 @@ writes the briefings and judges your freeform orders — and every provider it s
 
 ```bash
 npm start          # http://localhost:5173
-npm test           # 229 engine, orders, treaties, politics, endgame, desk, world and translation tests
+npm test           # 264 engine, orders, treaties, reach, ties, world wars, endgame and translation tests
 ```
 
 There is nothing to install. `npm start` runs a ~60-line static file server from
@@ -40,10 +40,10 @@ turn, the world throws events at you, wars grind forward, and the books get bala
   still allowed, and orders that contradict each other (two alignment changes, two treaty
   calls, two annexations) will not sit on the desk together.
 
-- **348 orders** across ten tabs — Quick, Economy, Society, Domestic, Military, Diplomacy,
-  Alliances, Intelligence, Technology and the War Room — from `Fiscal Stimulus` and
-  `Semiconductor Self-Sufficiency` to `Covert Destabilisation` and `Mount an Amphibious
-  Landing`. Every shelf can be sorted by relevance, odds, cost, political capital or name.
+- **380 orders** across eleven tabs — Quick, Economy, Society, Domestic, Military,
+  Diplomacy, Alliances, Ties, Intelligence, Technology and the War Room — from `Fiscal
+  Stimulus` and `Semiconductor Self-Sufficiency` to `Close the Strait to Their Shipping`,
+  `Enter the War on Their Side` and `Mount an Amphibious Landing`. Every shelf can be sorted by relevance, odds, cost, political capital or name.
 - **Every tab reads the room, not just Quick.** A category is a *pool*, not a menu: the
   economy tab of a country that is broke and stagnant offers `Defend the Currency`,
   `Comprehensive Tax Reform` and `Issue a Sovereign Bond`, while a rich and growing one is
@@ -148,6 +148,103 @@ turn, the world throws events at you, wars grind forward, and the books get bala
   Union and the Digital Concord — so a run can end with an alliance map that no longer
   looks like the one it started from.
 
+### Who needs whom
+
+There is a second map under the first one. Every country runs some share of itself through
+other countries — and which countries, and how much, is derived rather than declared: from
+gravity (a big near market beats a small far one), from what each of them actually *is*
+(Korea sells chips, Germany buys energy, Taiwan makes something nobody else can), and from
+the organisations they belong to. A reserve currency, a base network and a payments system
+make a distant market behave like a near one, which is why Korea leans on the American
+economy as well as the Chinese one rather than only on the one next door.
+
+- **Exposure is directed.** Mexico's exposure to the United States is nothing like the
+  United States' exposure to Mexico, and every consequence turns on that asymmetry.
+- **Cutting somebody off costs each of you what *you* had at stake**, not a constant. An
+  embargo against a country that needs your market wrecks it and costs you almost nothing;
+  the same order pointed the other way is a self-inflicted wound. Sanctions used to be
+  −0.4% growth on the target and −0.08% on you, whoever you were and whoever they were.
+- **The card tells you which way the leverage runs before you pull the lever** — "they need
+  you more", "evenly matched", "you need them more" — and the Ties panel shows the whole
+  web: who you lean on, what they supply (energy, components, credit, food, the route
+  itself), who leans on you, what is currently shut, and what that costs you in growth
+  every quarter.
+- **War closes it.** Nobody ships through a front, so the quarter a war starts both
+  economies take the loss of everything that ran through the other one. A negotiated peace
+  re-opens most of it; the rest has to be rebuilt.
+- **A whole tab of commercial statecraft.** Embargo everything or only the three categories
+  they cannot make themselves, close a strait, sanction whoever keeps trading with them,
+  underwrite their dependence on you until they cannot leave, de-risk a supply chain you
+  cannot defend, build the strategic stockpile, buy the chokepoint, form a producers'
+  cartel, lend them more than they can repay, or ship them the grain.
+
+### Things you say, and what they say back
+
+Every order in the catalogue used to be a one-way verb. **Twelve demands and offers** are
+addressed to a named government with terms attached, and are *answered* — the quarter
+after you send them. Market access, transit and overflight, that they leave their bloc,
+that they cut off your rival, reparations, a border adjustment, that they vacate what they
+are sitting on, an invitation into your camp, an offer to buy territory, that they stand
+down, an offer of protection, that they hand over the people they are sheltering.
+
+The answer is computed from things you can see and move — how they feel about you, what
+you are asking for, what you could do about a refusal, how much they need your market, who
+is standing behind them, how big they are next to you — and the odds are on the card with
+those six factors named. They accept, they refuse, or **they come back with a counter-offer
+that lands on your desk as a decision**: pay their price, refuse it and press the original
+demand in front of everybody watching, or withdraw and eat the cost of having asked.
+
+**It runs both ways.** Other governments send you the same propositions, and one addressed
+to you is never resolved behind your back — it arrives as a decision with three answers:
+give them it, agree for something in return, or refuse in one paragraph. The card says
+whether they are in any position to make a refusal cost you something, because that is the
+whole of the decision.
+
+### Wars that make sense on a map
+
+An army that cannot get somewhere does not fight there, and does not end up administering
+it. **Reach** is one number, 0–1, for what share of a country's force it can put onto
+another country's ground: a shared border is all of it, distance eats it, and a blue-water
+navy, an expeditionary tradition, overseas bases or **an ally on the target's border who has
+given you basing rights** push the horizon back out.
+
+- **A war is decided by the force each side can bring to the theatre**, not the force it
+  owns. A coalition of twelve counts for very little if eleven of them are on the wrong
+  ocean — which is the difference between a coalition and a communiqué. Every war card
+  lists each belligerent's weight *there*.
+- **Ground only moves to somebody who could have marched onto it.** A coalition war used to
+  be able to end with a landlocked country administering an island chain it could not have
+  sailed to; now, if nobody on the winning side can reach a country, that country loses no
+  ground however badly it is losing the war — and the briefing says so: *neither side can
+  put an army on the other's ground; this is being fought at sea, in the air and over the
+  accounts.*
+- **Nobody annexes a country they could not have reached.** If the only winners are an
+  ocean away, the state survives its own defeat.
+
+### Ally wars, and the war that becomes everybody's
+
+- **Alliances answer.** A military organisation whose member is attacked polls the rest of
+  its membership, weighted by the bloc's own cohesion — and only for the country that was
+  actually attacked, so a coalition does not turn into a chain letter. A bloc never invokes
+  itself against its own members. **Call the Alliance** convenes the standing council and
+  re-opens the question for organisations that already declined once.
+- **The other side's alliance mobilises back**, once a hostile bloc is in the field behind
+  its own member. That is what turns a war bipolar, and it is the only route by which the
+  attacking side ever acquires a second great power.
+- **Wars merge.** If the same countries end up on the same sides of two separate wars, it
+  was one war: the fronts, the casualties and the occupied ground are folded together and
+  the smaller one is remembered as a theatre of the larger.
+- **You can walk into a war that is already running**, on either side — `Enter the War on
+  Their Side` or `Enter the War Against Them` — or `Declare Armed Neutrality` and trade with
+  both of them while escorting your own shipping, which the engine then respects when
+  somebody tries to recruit you.
+- **And past about 36% of the world's power, with great powers on both sides and ten
+  belligerents, it stops being a war and becomes *the* war.** It gets a name of its own —
+  *The Great War*, then *The Second Great War* — trade collapses for countries that are not
+  even in it, belligerents go onto a total-war footing whether or not the treasury can carry
+  it, and every quarter one more neutral is put to the question and usually stops being one.
+  The Ties panel warns you as it approaches, with the percentage.
+
 ### Treaties, and what paper is worth
 
 There was a `treaties` array in the save from the first commit. One order wrote to it and
@@ -196,6 +293,10 @@ watching. The centre column carries a panel that shows it, in three faces:
   gave itself and the statistics it inherited from its parent; the states that no longer
   govern themselves and who administers them; every country's net gain or loss of ground
   since the first quarter; and the log of how each of those things happened.
+- **Ties** — the second map: what share of your economy runs through other countries and
+  what each of them supplies, who depends on *you*, which way the leverage runs in every
+  one of those relationships, what is currently shut and what that is costing you in
+  growth, and the propositions waiting on somebody's desk for an answer.
 - **Rankings** — ten league tables (power, economy, per head, army, land, people,
   influence, technology, stability, warheads) with your own position always visible, even
   when you are fiftieth.
@@ -519,7 +620,7 @@ without being documented and cannot be documented without existing.
 
 The whole interface ships in **English and Korean**, switchable from **the header on the
 setup screen and the top bar in game** — one click, no menus — and remembered between runs. That covers the chrome, all 56 country names and one-line briefs,
-all 348 order names and descriptions, the world modes, difficulty tiers, themes, help,
+all 380 order names and descriptions, the world modes, difficulty tiers, themes, help,
 events, decisions, escalation and war text — and the locally generated quarterly briefing,
 which is composed from translated fragments rather than translated after the fact.
 
@@ -624,6 +725,10 @@ src/
     worldmodes.js     Stable / Current / Chaotic, composed with difficulty
     consequences.js   escalation ladders and chain reactions
     leadership.js     the standing of the office → how many orders a quarter
+    reach.js          who can actually get there, and who therefore takes ground
+    dependency.js     the second map: who needs whom, and what closing it costs
+    worldwar.js       bloc calls, wars that merge, and the war that goes general
+    exchanges.js      demands and offers other governments answer
     factions.js       the four creditors of political capital
     nemesis.js        the rivalry, and the file behind it
     intel.js          what you actually know about somebody else
@@ -653,6 +758,7 @@ src/
     events.js         ambient events, wired to the decision catalogue
     decisions.js      the twenty-five things that land on the desk
     starts.js         how hard each country is to start as, and inventing one
+    tradeorders.js    the Ties tab, and the orders that put you in somebody's war
     war.js            declaration, the quarterly grind, and how wars end
     turn.js           the quarter, the economy, scoring, endgame
   ai/
@@ -674,8 +780,9 @@ src/
     setup.js          new-game screen
     game.js           command screen: dashboard, inspector, feed, planner
     dom.js, store.js  helpers and persistence
-tests/                engine, orders, treaties, politics, endgame, desk, territory,
-                      coalitions, worldview, AI-boundary, world and translation tests
+tests/                engine, orders, treaties, reach, ties, world wars, politics,
+                      endgame, desk, territory, coalitions, worldview, AI-boundary,
+                      world and translation tests
 ```
 
 The simulation (`src/engine/`, `src/data/`) has no DOM dependency and runs under plain Node,
@@ -683,9 +790,11 @@ which is how the tests exercise it.
 
 ## Notes on scope
 
-- The map is a schematic node plot at true latitude/longitude, not a territorial map. There
-  is no border-drawing, occupation, or province system; wars are resolved at the strategic
-  level.
+- The map is a fitted equal-area grid at true latitude/longitude, not a survey. Borders are
+  approximate and are meant to move legibly rather than accurately.
+- Trade exposure, power projection and bloc cohesion are derived from the same
+  game-balanced country sheets as everything else. They are modelled to make decisions
+  legible, not to reproduce any real trade statistic.
 - Real leaders are never named. The narrator prompt requires offices ("the chancellor"), not
   people.
 - This is a game. Its numbers are balanced for play, its events are invented, and none of it

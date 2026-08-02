@@ -16,6 +16,7 @@ import { QUICK_ORDERS } from './quickorders.js';
 import { PROGRAMMES } from './programmes.js';
 import { ALLIANCE_ORDERS } from './alliances.js';
 import { WAR_OPERATIONS } from './waroperations.js';
+import { DEMAND_ORDERS, TRADE_ORDERS, WAR_ENTRY_ORDERS } from './tradeorders.js';
 import { canSign as canSignTreaty } from './treaties.js';
 import { permits } from './constitution.js';
 
@@ -34,6 +35,8 @@ export const CATEGORIES = [
   { id: 'military', name: 'Military', icon: '⚔' },
   { id: 'diplomacy', name: 'Diplomacy', icon: '⚖' },
   { id: 'alliances', name: 'Alliances', icon: '⛓' },
+  // Commercial statecraft: the second map, and the one most quarters are won on.
+  { id: 'trade', name: 'Ties', icon: '⇄' },
   { id: 'intelligence', name: 'Intelligence', icon: '◈' },
   { id: 'technology', name: 'Technology', icon: '⚛' },
   // Only offered while there is a war to run.
@@ -1024,6 +1027,9 @@ ACTIONS.push(...PROGRAMMES);
 ACTIONS.push(...ALIGNMENT_ORDERS);
 ACTIONS.push(...ALLIANCE_ORDERS);
 ACTIONS.push(...WAR_OPERATIONS);
+ACTIONS.push(...TRADE_ORDERS);
+ACTIONS.push(...WAR_ENTRY_ORDERS);
+ACTIONS.push(...DEMAND_ORDERS);
 
 /**
  * Society is carved out of the domestic pile rather than invented: health,

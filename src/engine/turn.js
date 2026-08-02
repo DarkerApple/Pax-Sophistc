@@ -19,6 +19,9 @@ import { decayIntel, recordIntel } from './intel.js';
 import { liveObjectives, meets, reviewDue, reviewMandate } from './mandate.js';
 import { tickCommitments } from './commitments.js';
 import { alliedAid, tickTreaties } from './treaties.js';
+import { tickTrade, tradeDrag, tradeHealth } from './dependency.js';
+import { resolveExchanges } from './exchanges.js';
+import { brinkOfGeneralWar, worldWarReport } from './worldwar.js';
 import { congressDue, congressOutcome, convene, resolveCongress } from './congress.js';
 import { ambitionBonus } from './ambitions.js';
 import { electionState } from './lifecycle.js';
@@ -168,6 +171,19 @@ export function advanceTurn(game, { orders = [], decisionChoice = null } = {}) {
     //    actually fighting.
     report.treaties = tickTreaties(game, rng);
     report.aid = alliedAid(game, rng);
+
+    // Commerce: embargoes lapse, the general shock heals, and the propositions
+    // you put to other governments last quarter come back answered.
+    report.trade = tickTrade(game);
+    const answers = resolveExchanges(game, rng, mods);
+    report.exchanges = answers.reports;
+    if (answers.decision && !game.pendingDecision) {
+      game.pendingDecision = answers.decision;
+      report.newDecision = answers.decision;
+    }
+    report.worldWar = worldWarReport(game);
+    report.brink = brinkOfGeneralWar(game);
+    report.tradeHealth = Number(tradeHealth(game, game.playerId).toFixed(2));
 
     // 8. The rivalry, the fog, and the four creditors of political capital.
     noteQuarter(game, report);
@@ -353,6 +369,9 @@ export function growthOutlook(game, id, mods = gameModifiers(game)) {
   for (const mod of state.modifiers) modGrowth += mod.growth || 0;
 
   const warDrag = activeWarsFor(game, id).length * -0.35;
+  // What is shut. Zero in a world where nothing has been cut off, so a peaceful
+  // quarter reads exactly as it always did.
+  const tradeEffect = tradeDrag(game, id);
   const stabilityEffect = (state.stability - 60) / 300;
   const unrestEffect = -Math.max(0, state.unrest - 35) / 130;
   const techEffect = (state.tech - 55) / 800;
@@ -372,6 +391,7 @@ export function growthOutlook(game, id, mods = gameModifiers(game)) {
       unrestEffect +
       techEffect +
       convergence +
+      tradeEffect +
       warDrag) *
     game.globalGrowth;
   if (isPlayer) growth *= mods.growthMultiplier;
@@ -383,6 +403,7 @@ export function growthOutlook(game, id, mods = gameModifiers(game)) {
     { label: 'unrest', value: unrestEffect },
     { label: 'technology', value: techEffect },
     { label: 'the size you already are', value: convergence },
+    { label: 'the arrangements that are shut', value: tradeEffect },
     { label: 'the war', value: warDrag },
   ]
     .filter((d) => Math.abs(d.value) >= 0.03)

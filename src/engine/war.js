@@ -29,6 +29,9 @@ import { annexNation, isSovereign } from './statecraft.js';
 import { balancingChance, opposingCoalition, recordAggression } from './coalitions.js';
 import { alliedAid, alliesOf, invoke, treatyBetween } from './treaties.js';
 import { nameWar } from './warnames.js';
+import { MIN_REACH, occupiersFor, reach, theatreOf, theatrePower, theatreWeight } from './reach.js';
+import { blocCall, mergeWars, tickWorldWar } from './worldwar.js';
+import { noteTradeBreak as severTiesNote, restoreTies, severTies } from './dependency.js';
 
 const HOME_GROUND_BONUS = 1.18;
 // Wars used to grind for twenty quarters. They now reach a verdict in roughly
@@ -102,6 +105,16 @@ export function declareWar(game, attackerId, defenderId, { rng, reason = 'unspec
 
   recordAggression(game, attackerId, 'war', 1.4);
 
+  // Nobody ships through a front. Trade between the two sides stops the quarter
+  // the shooting starts, and both economies feel it in proportion to how much
+  // of themselves ran through the other one.
+  for (const a of war.attackers) {
+    for (const d of war.defenders) {
+      const cut = severTies(game, a, d, 1, 0, { by: attackerId, label: naming.name });
+      if (a === game.playerId || d === game.playerId) severTiesNote(game, a, d, cut, naming.name);
+    }
+  }
+
   game.wars.push(war);
   game.worldTension = clamp(game.worldTension + 18, 0, 100);
   adjustRelation(game, attackerId, defenderId, -70);
@@ -129,8 +142,17 @@ export function declareWar(game, attackerId, defenderId, { rng, reason = 'unspec
   return war;
 }
 
-function sidePower(game, ids) {
-  return ids.reduce((sum, id) => sum + combatPower(game, id), 0);
+/**
+ * What a side is worth *in this war*.
+ *
+ * Not the sum of its armies — the sum of what each of them can get to the
+ * theatre. A coalition of twelve counts for very little if eleven of them are
+ * an ocean away with no lift and no bases, which is the difference between a
+ * coalition and a communiqué.
+ */
+function sidePower(game, ids, war = null) {
+  if (!war) return ids.reduce((sum, id) => sum + combatPower(game, id), 0);
+  return theatrePower(game, ids, war);
 }
 
 /**
@@ -145,11 +167,17 @@ function rout(game, war) {
   const losing = winning === 'attackers' ? 'defenders' : 'attackers';
   if (war.exhaustion[winning] > 62 && !war.pressed) return false;
 
-  const edge = sidePower(game, war[winning]) / Math.max(0.01, sidePower(game, war[losing]));
+  const edge = sidePower(game, war[winning], war) / Math.max(0.01, sidePower(game, war[losing], war));
   if (edge < 2.4 && !war.pressed) return false;
 
-  // Nothing left to overrun means nothing left to fight for.
-  return war[losing].some((id) => areaOf(game, id) > 0 && isSovereign(game, id));
+  // Nothing left to overrun means nothing left to fight for — and nothing you
+  // can reach is the same thing as nothing left, whatever the map says.
+  return war[losing].some(
+    (id) =>
+      areaOf(game, id) > 0 &&
+      isSovereign(game, id) &&
+      war[winning].some((w) => reach(game, w, id) >= MIN_REACH),
+  );
 }
 
 /**
@@ -159,11 +187,15 @@ function rout(game, war) {
 export function tickWars(game, rng, mods) {
   const reports = [];
 
+  // Two wars with the same countries on the same sides are one war. Do this
+  // first, so a merged front is fought as a front rather than as two ledgers.
+  reports.push(...mergeWars(game));
+
   for (const war of game.wars) {
     if (!war.active) continue;
 
-    const atkPower = sidePower(game, war.attackers) * (1 - war.exhaustion.attackers / 170);
-    const defPower = sidePower(game, war.defenders) * HOME_GROUND_BONUS * (1 - war.exhaustion.defenders / 170);
+    const atkPower = sidePower(game, war.attackers, war) * (1 - war.exhaustion.attackers / 170);
+    const defPower = sidePower(game, war.defenders, war) * HOME_GROUND_BONUS * (1 - war.exhaustion.defenders / 170);
     const total = Math.max(1, atkPower + defPower);
 
     // Swing on the *ratio*, not the share of the total. Share saturates: a 3:1
@@ -203,6 +235,13 @@ export function tickWars(game, rng, mods) {
     const joined = recruitToWar(game, war, rng, mods);
     if (joined) reports.push(joined);
 
+    // …and the organisations people belong to answer for their members, which
+    // is the whole point of belonging to one.
+    reports.push(...blocCall(game, war, rng));
+
+    // Once enough of the world is in, it stops being somebody's war.
+    reports.push(...tickWorldWar(game, war, rng, mods));
+
     const advance = advanceFront(game, war, rng);
 
     const nuclearRisk = nuclearEscalationRisk(game, war, mods);
@@ -228,14 +267,33 @@ export function tickWars(game, rng, mods) {
     if (longEnough && (overwhelming || spent || (decisive && !routing))) {
       reports.push(concludeWar(game, war, rng, overwhelming || decisive ? 'decisive' : 'exhaustion'));
     } else {
+      const theatre = theatreOf(game, war);
       reports.push({
         type: 'war',
         warId: war.id,
         title: war.name,
-        text: advance ? `${frontLineSummary(war)} ${advance.text}` : frontLineSummary(war),
+        text: advance
+          ? `${frontLineSummary(war)} ${advance.text}`
+          : war.unreachable
+            ? `${frontLineSummary(war)} ${t('war.outOfReach',
+                'Neither side can put an army on the other’s ground. This is being fought at sea, in the air and over the accounts.')}`
+            : frontLineSummary(war),
         warScore: Math.round(war.warScore),
         casualties: war.casualties,
         ground: advance || null,
+        worldWar: Boolean(war.worldWar),
+        theatre,
+        // What each belligerent is actually worth here, which is rarely what it
+        // is worth at home.
+        weights: [...war.attackers, ...war.defenders]
+          .filter((id) => isSovereign(game, id))
+          .map((id) => ({
+            id,
+            side: war.attackers.includes(id) ? 'attackers' : 'defenders',
+            weight: Number(theatreWeight(game, id, war).toFixed(2)),
+          }))
+          .sort((a, b) => b.weight - a.weight)
+          .slice(0, 10),
       });
     }
   }
@@ -271,7 +329,10 @@ function recruitToWar(game, war, rng, mods) {
   // One draw a quarter, weighted — a war should gather a coalition over
   // several quarters, not acquire one wholesale.
   const pick = rng.pick(candidates);
-  const chance = balancingChance(game, pick, aggressor, victim, mods) * 0.5;
+  // A declared armed neutrality is not a magic word, but it is a position, and
+  // people who have taken it are much harder to talk into somebody's war.
+  const neutral = (game.nations[pick]?.neutralUntil ?? 0) > game.turn ? 0.3 : 1;
+  const chance = balancingChance(game, pick, aggressor, victim, mods) * 0.5 * neutral;
   if (!rng.bool(chance)) return null;
 
   war[losing].push(pick);
@@ -305,13 +366,35 @@ function advanceFront(game, war, rng) {
 
   const gaining = lead > 0 ? war.attackers : war.defenders;
   const yielding = lead > 0 ? war.defenders : war.attackers;
-  // The ground goes to whoever is doing the fighting, not to whoever is listed
-  // first. A coalition war used to end with the small country that was attacked
-  // occupying the great power, because its name headed the array.
-  const gainer = [...gaining].sort((a, b) => combatPower(game, b) - combatPower(game, a))[0];
-  // Take from whichever opponent still holds the most — the war's centre of
-  // gravity, not whoever happens to be listed first.
-  const target = [...yielding].sort((a, b) => areaOf(game, b) - areaOf(game, a))[0];
+
+  // Who gives ground, and to whom. Both halves of this used to be decided by
+  // array order and raw strength, which is how a coalition war ended with a
+  // landlocked country administering an island chain it could not have sailed
+  // to. Ground now goes to somebody who could actually have marched onto it:
+  // every pairing is scored by the taker's reach, and if nobody on the winning
+  // side can get to a country, that country is not losing ground this quarter
+  // however badly it is losing the war.
+  let pick = null;
+  for (const candidate of [...yielding].sort((a, b) => areaOf(game, b) - areaOf(game, a))) {
+    if (!isSovereign(game, candidate) || areaOf(game, candidate) <= 0) continue;
+    const able = occupiersFor(game, gaining, candidate);
+    if (!able.length) continue;
+    // Prefer the front where the winning side is strongest relative to what it
+    // is taking, but only ever among places it can get to.
+    const score = able[0].power * able[0].reach * Math.sqrt(areaOf(game, candidate));
+    if (!pick || score > pick.score) pick = { target: candidate, gainer: able[0].id, reach: able[0].reach, score };
+  }
+
+  if (!pick) {
+    // The side that is winning cannot touch the side that is losing. This is a
+    // real outcome — an air and naval war, a war of exhaustion, a war decided
+    // by blockade — and it is why oceans matter.
+    war.unreachable = (war.unreachable || 0) + 1;
+    return null;
+  }
+  war.unreachable = 0;
+
+  const { target, gainer } = pick;
   if (!target || target === gainer) return null;
 
   const held = areaOf(game, target) * 1000;
@@ -319,7 +402,7 @@ function advanceFront(game, war, rng) {
 
   // 0 at the threshold, 1 at a total rout.
   const pressure = (Math.abs(lead) - 10) / 90;
-  const rawEdge = sidePower(game, gaining) / Math.max(0.01, sidePower(game, yielding));
+  const rawEdge = sidePower(game, gaining, war) / Math.max(0.01, sidePower(game, yielding, war));
   // Capped for the size of the bite — beyond a certain advantage you are limited
   // by roads and fuel, not by the enemy — but the uncapped ratio still decides
   // whether the country can be overrun at all.
@@ -385,7 +468,12 @@ function settleOccupation(game, war, rng, kind, winners, losers) {
         // to head the list. A coalition war should not end with the small
         // country that was attacked formally annexing the great power that
         // attacked it, because its name came first.
-        const done = annexNation(game, loserId, occupierOf(war, loserId, winners), rng, { reason: 'conquest' });
+        const holder = occupierOf(game, war, loserId, winners);
+        // And nobody administers a country they could not have reached. If the
+        // only winners are an ocean away, the state survives its own defeat —
+        // beaten, occupied by nobody, and still on the map.
+        if (!holder) continue;
+        const done = annexNation(game, loserId, holder, rng, { reason: 'conquest' });
         if (done) result.absorbed.push(done);
       }
     }
@@ -409,14 +497,18 @@ function settleOccupation(game, war, rng, kind, winners, losers) {
   return result;
 }
 
-/** Which of the winners is holding most of this loser's ground. */
-function occupierOf(war, loserId, winners) {
+/**
+ * Which of the winners is holding most of this loser's ground — and, failing
+ * that, which of them could plausibly march in. Returns null when the answer is
+ * nobody, which is a legitimate answer.
+ */
+function occupierOf(game, war, loserId, winners) {
   const counts = new Map();
   for (const [, from, holder] of war.occupied || []) {
     if (from !== loserId || !winners.includes(holder)) continue;
     counts.set(holder, (counts.get(holder) || 0) + 1);
   }
-  let best = winners[0];
+  let best = null;
   let bestCount = -1;
   for (const [holder, count] of counts) {
     if (count > bestCount) {
@@ -424,7 +516,9 @@ function occupierOf(war, loserId, winners) {
       best = holder;
     }
   }
-  return best;
+  if (best) return best;
+  const able = occupiersFor(game, winners, loserId);
+  return able.length ? able[0].id : null;
 }
 
 /** Cheap wrapper so war.js does not have to import the territory baseline API. */
@@ -632,10 +726,13 @@ export function concludeWar(game, war, rng, kind = 'decisive') {
     war.reparations = Math.round(pot);
   }
 
-  // Everyone stops shooting; nobody forgets.
+  // Everyone stops shooting; nobody forgets. Commerce restarts more slowly than
+  // the guns stop: a quarter of what was there comes straight back, the rest
+  // has to be rebuilt by somebody.
   for (const a of war.attackers) {
     for (const d of war.defenders) {
       adjustRelation(game, a, d, 18);
+      restoreTies(game, a, d, 0.6);
     }
   }
 

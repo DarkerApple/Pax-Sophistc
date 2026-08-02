@@ -222,6 +222,13 @@ export function createGame({
     // Things you cannot simply stop doing.
     commitments: [],
     treatyLocks: {},
+    // The second map: which commercial arrangements are currently shut, and how
+    // much of the world's shipping a general war has closed for everybody.
+    tradeCuts: {},
+    tradeShock: 0,
+    insulation: {},
+    // Propositions in flight between governments, ours and other people's.
+    exchanges: [],
     // The closing session, once it convenes.
     congress: null,
     congressEffects: {},

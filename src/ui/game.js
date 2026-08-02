@@ -76,6 +76,10 @@ import { chronicle, chronicleText } from '../engine/chronicle.js';
 import { concludeTerm, electionState, inheritance } from '../engine/lifecycle.js';
 import { canQueue, leadership, nextSlotAt, orderSlots } from '../engine/leadership.js';
 import { TREATY_KINDS, alliesOf, treatyReport } from '../engine/treaties.js';
+import { leverage, tiesReport } from '../engine/dependency.js';
+import { exchangeReport } from '../engine/exchanges.js';
+import { brinkOfGeneralWar, worldWarReport } from '../engine/worldwar.js';
+import { reachDetail, theatreOf, theatreWeight } from '../engine/reach.js';
 import { formalName } from '../engine/warnames.js';
 import { MAP_FOCUSES, VIEW_MODES, WorldMap, alignmentOf, legendFor } from './map.js';
 import { KEY_GROUPS, groupLabel, keyLabel, keybindsIn } from './keys.js';
@@ -94,6 +98,15 @@ const STAT_ROWS = [
   labelOf: () => t(`stat.${row.key}`, row.label),
   hintOf: () => t(`stat.${row.key}Hint`, row.hint),
 }));
+
+/** Which way the commercial leverage runs, in words rather than a ratio. */
+const GRIP_WORDS = {
+  yours: 'they need you more',
+  'slightly-yours': 'slightly your way',
+  even: 'evenly matched',
+  'slightly-theirs': 'slightly theirs',
+  theirs: 'you need them more',
+};
 
 /** Short names for the four factions, for the two chips on every order card. */
 const SHORT_FACTION = {
@@ -178,6 +191,7 @@ const CATEGORY_HINTS = {
   military: 'Force: what you build, where you put it, how ready it is.',
   diplomacy: 'Standing, mediation, aid, and pressure short of force.',
   alliances: 'Treaties and blocs: signing them, keeping them, calling them in.',
+  trade: 'Commercial statecraft: what you close, what you open, and who feels it.',
   intelligence: 'What you know about them, and what they know about you.',
   technology: 'Research, industry and the long bets.',
   war: 'Only while you are fighting. These move the front itself.',
@@ -1191,6 +1205,7 @@ export class GameScreen {
     const tabs = [
       ['alignments', t('world.alignments', 'Alignments')],
       ['treaties', t('world.treaties', 'Treaties')],
+      ['ties', t('world.ties', 'Ties')],
       ['borders', t('world.borders', 'Borders')],
       ['rankings', t('world.rankings', 'Rankings')],
     ];
@@ -1204,9 +1219,10 @@ export class GameScreen {
         ),
       ),
       this.worldTab === 'treaties' ? this.#treatiesTab()
-        : this.worldTab === 'borders' ? this.#bordersTab()
-          : this.worldTab === 'rankings' ? this.#rankingsTab()
-            : this.#alignmentsTab(),
+        : this.worldTab === 'ties' ? this.#tiesTab()
+          : this.worldTab === 'borders' ? this.#bordersTab()
+            : this.worldTab === 'rankings' ? this.#rankingsTab()
+              : this.#alignmentsTab(),
     );
   }
 
@@ -1365,25 +1381,7 @@ export class GameScreen {
       wars.length
         ? h('div',
             h('h3.subhead', t('treaty.warsNow', 'Wars being fought')),
-            wars.slice(0, 6).map((war) => h('div.warcard',
-              h('div.warcard__head',
-                h('span.warcard__name', war.name),
-                h('span.warcard__theatre', war.theatre || ''),
-              ),
-              h('div.warcard__sides',
-                h('span.warcard__side',
-                  war.attackers.map((id) => defOf(game, id)?.flag || '·').join(' ')),
-                h('span.warcard__vs', 'vs'),
-                h('span.warcard__side',
-                  war.defenders.map((id) => defOf(game, id)?.flag || '·').join(' ')),
-              ),
-              h('div.warcard__meta',
-                t('treaty.warMeta', '{n} states · {c}k casualties · since {year}', {
-                  n: war.attackers.length + war.defenders.length,
-                  c: Math.round((war.casualties || 0) / 1000),
-                  year: war.startYear ?? game.year,
-                })),
-            )),
+            wars.slice(0, 6).map((war) => this.#warCard(war)),
           )
         : null,
 
@@ -1402,6 +1400,209 @@ export class GameScreen {
             ),
           )
         : null,
+    );
+  }
+
+  /**
+   * One war, with the thing that was missing from it: what each belligerent is
+   * actually worth *there*.
+   *
+   * A coalition of twelve reads as overwhelming until you notice that nine of
+   * them are on the wrong ocean. The weight column is the number the engine
+   * fights the war with, so a player can see why a war they are winning on
+   * paper is not moving.
+   */
+  #warCard(war) {
+    const game = this.game;
+    const theatre = theatreOf(game, war);
+    const roster = [...war.attackers, ...war.defenders].filter((id) => isSovereign(game, id));
+    const weights = roster
+      .map((id) => ({
+        id,
+        side: war.attackers.includes(id) ? 'attackers' : 'defenders',
+        weight: theatreWeight(game, id, war),
+      }))
+      .sort((a, b) => b.weight - a.weight);
+    const distant = weights.filter((w) => w.weight < 0.5);
+
+    return h('div.warcard', { class: war.worldWar ? 'warcard is-general' : 'warcard' },
+      h('div.warcard__head',
+        h('span.warcard__name', war.name),
+        war.worldWar
+          ? h('span.warcard__general', t('war.generalTag', 'general war'))
+          : h('span.warcard__theatre', theatre ? tNation(defOf(game, theatre)) : war.theatre || ''),
+      ),
+      h('div.warcard__sides',
+        h('span.warcard__side',
+          war.attackers.map((id) => defOf(game, id)?.flag || '·').join(' ')),
+        h('span.warcard__vs', t('war.vs', 'vs')),
+        h('span.warcard__side',
+          war.defenders.map((id) => defOf(game, id)?.flag || '·').join(' ')),
+      ),
+      h('div.warcard__meta',
+        t('treaty.warMeta', '{n} states · {c}k casualties · since {year}', {
+          n: war.attackers.length + war.defenders.length,
+          c: Math.round((war.casualties || 0) / 1000),
+          year: war.startYear ?? game.year,
+        })),
+      h('div.weights',
+        weights.slice(0, 8).map((entry) =>
+          h('div.weight', { class: `weight is-${entry.side}`,
+            title: t('war.weightHint',
+              '{nation} can bring about {pct}% of its strength to this theatre.',
+              { nation: tNation(defOf(game, entry.id)), pct: Math.round(entry.weight * 100) }),
+          },
+            h('span.weight__flag', defOf(game, entry.id)?.flag || '·'),
+            h('span.weight__track',
+              h('span.weight__fill', { style: { width: `${Math.round(entry.weight * 100)}%` } })),
+            h('span.weight__value', `${Math.round(entry.weight * 100)}%`),
+          ),
+        ),
+      ),
+      distant.length
+        ? h('p.warcard__note', t('war.distantNote',
+            '{n} belligerent(s) cannot put much on the ground here. They are in the war; they are not in the theatre.',
+            { n: distant.length }))
+        : null,
+      war.unreachable
+        ? h('p.warcard__note', t('war.unreachableNote',
+            'Neither side can reach the other. This one is being fought at sea, in the air and over the accounts.'))
+        : null,
+    );
+  }
+
+  /**
+   * The second map: what this country needs from other countries.
+   *
+   * Everything in the Ties tab of the catalogue is priced against these
+   * numbers, so a player who is about to embargo somebody should be able to see
+   * which way the leverage runs first. That is the whole point of showing it.
+   */
+  #tiesTab() {
+    const game = this.game;
+    const report = tiesReport(game, game.playerId, 8);
+    const exchanges = exchangeReport(game);
+    const general = worldWarReport(game);
+    const brink = brinkOfGeneralWar(game);
+    const pct = (v) => `${(v * 100).toFixed(1)}%`;
+
+    const tieRow = (entry, direction) => {
+      const grip = leverage(game, game.playerId, entry.id);
+      return h('div.tie', { class: entry.open < 1 ? 'tie is-shut' : 'tie' },
+        h('button.tie__who', {
+          onclick: () => this.#openDetail(entry.id),
+          onpointerenter: () => this.#onMapHover(entry.id),
+          onpointerleave: () => this.#onMapHover(null),
+        },
+          h('span.tie__flag', entry.def?.flag || '·'),
+          h('span.tie__name', tNation(entry.def)),
+        ),
+        h('span.tie__track',
+          h('span.tie__fill', {
+            style: {
+              width: `${Math.min(100, entry.share * 320)}%`,
+              background: direction === 'out' ? 'var(--accent)' : 'var(--warn, var(--muted-2))',
+            },
+          })),
+        h('span.tie__value', pct(entry.share)),
+        entry.open < 1
+          ? h('span.tie__shut', t('ties.shut', 'shut'))
+          : h('span.tie__grip', {
+              title: t('ties.gripHint',
+                'Which of you would be hurt more by closing this. Yours means they need you more than you need them.'),
+            }, t(`ties.verdict.${grip.verdict}`, GRIP_WORDS[grip.verdict])),
+      );
+    };
+
+    return h('div.worldbody',
+      general && !general.over
+        ? h('div.generalwar',
+            h('h3.generalwar__name', general.war.name),
+            h('p.generalwar__note', t('ties.generalNote',
+              '{pct}% of the world’s power is committed. Sea lanes, insurance and payment systems are closed to people who are not even in it.',
+              { pct: Math.round(general.state.share * 100) })),
+          )
+        : brink
+          ? h('div.generalwar.generalwar--brink',
+              h('h3.generalwar__name', t('ties.brinkHead', 'The {war} is becoming everybody’s', { war: brink.war.name })),
+              h('p.generalwar__note', t('ties.brinkNote',
+                '{pct}% of the world’s power is already in it, across {n} states. Past about {need}% it stops being a regional war.',
+                { pct: Math.round(brink.state.share * 100), n: brink.state.belligerents, need: 36 })),
+            )
+          : null,
+
+      h('h3.subhead', t('ties.dependsHead', 'What you need from other people')),
+      h('p.panel__note', t('ties.opennessNote',
+        '{pct}% of your economy runs through somebody else, and {open}% of that is currently open.',
+        { pct: Math.round(report.openness * 100), open: Math.round(report.health * 100) })),
+      report.dependsOn.length
+        ? h('div.ties', report.dependsOn.map((entry) =>
+            h('div',
+              tieRow(entry, 'out'),
+              entry.composition.length
+                ? h('div.tie__what', entry.composition.map((what) =>
+                    h('span.tie__tag', t(`ties.what.${what.replace(/\s+/g, '')}`, what))))
+                : null,
+            )))
+        : h('p.panel__note', t('ties.noneOut', 'Nothing you cannot do without.')),
+
+      h('h3.subhead', t('ties.dependedHead', 'Who needs you')),
+      h('p.panel__note', t('ties.dependedNote',
+        'This is your leverage, and it is the only kind that survives being used.')),
+      report.dependedOnBy.length
+        ? h('div.ties', report.dependedOnBy.map((entry) => tieRow(entry, 'in')))
+        : h('p.panel__note', t('ties.noneIn', 'Nobody depends on you for anything. That is a kind of freedom and a kind of irrelevance.')),
+
+      report.severed.length
+        ? h('div',
+            h('h3.subhead', t('ties.shutHead', 'What is currently shut')),
+            report.severed.map((entry) =>
+              h('div.severed',
+                h('span.severed__flag', entry.def?.flag || '·'),
+                h('span.severed__name', tNation(entry.def)),
+                h('span.severed__label', entry.label
+                  ? tLabel(entry.label)
+                  : t('ties.cutGeneric', 'closed')),
+                h('span.severed__cost', t('ties.costsYou', 'costs you {pct}', { pct: pct(entry.cost) })),
+                h('span.severed__left', entry.turnsLeft === null
+                  ? t('ties.indefinite', 'indefinite')
+                  : t('ties.quartersLeft', '{n}q left', { n: entry.turnsLeft })),
+              ),
+            ),
+            h('p.panel__note', t('ties.dragNote',
+              'Together these are worth {n} points of growth a quarter to you.', { n: report.drag.toFixed(2) })),
+          )
+        : null,
+
+      exchanges.outbound.length || exchanges.settled.length
+        ? h('div',
+            h('h3.subhead', t('ties.exchangesHead', 'Propositions outstanding')),
+            exchanges.outbound.map((entry) =>
+              h('div.exchange',
+                h('span.exchange__flag', entry.toDef?.flag || '·'),
+                h('div.exchange__body',
+                  h('div.exchange__name', tAction({ id: `demand-${entry.demandId}`, name: entry.demand?.name || entry.demandId })),
+                  h('div.exchange__ask', t(`demand.${entry.demandId}.ask`, entry.demand?.ask || '')),
+                ),
+                h('span.exchange__odds', t('ties.odds', '{pct}% likely', { pct: Math.round(entry.odds * 100) })),
+                h('span.exchange__due', entry.dueIn <= 0
+                  ? t('ties.dueNow', 'answer due')
+                  : t('ties.dueIn', '{n}q', { n: entry.dueIn })),
+              ),
+            ),
+            exchanges.settled.slice(0, 4).map((entry) =>
+              h('div.exchange.exchange--settled',
+                h('span.exchange__flag', (entry.from === game.playerId ? entry.toDef : entry.fromDef)?.flag || '·'),
+                h('div.exchange__body',
+                  h('div.exchange__name', entry.demand?.name || entry.demandId),
+                ),
+                h('span.exchange__status', { class: `exchange__status is-${entry.status}` },
+                  t(`ties.status.${entry.status}`, entry.status)),
+              ),
+            ),
+          )
+        : h('p.panel__note', t('ties.noExchanges',
+            'Nothing is on anybody’s desk. Demands and offers are in the Diplomacy tab; they are answered the quarter after you send them.')),
     );
   }
 
@@ -2240,6 +2441,7 @@ export class GameScreen {
         this.#detailForce(id, state),
         this.#detailCohesion(id, state),
         this.#detailStanding(id, state, def),
+        this.#detailTies(id),
 
         history.length > 2
           ? h('div.detail__section',
@@ -2411,6 +2613,51 @@ export class GameScreen {
       (state.sanctionedBy || []).length
         ? h('p.panel__note.panel__note--warn',
             t('detail.sanctionedBy', 'Under sanctions from {n} state(s).', { n: state.sanctionedBy.length }))
+        : null,
+    );
+  }
+
+  /**
+   * The sixth book: what this country needs from other countries, how far you
+   * could actually put an army on it, and which way the leverage between you
+   * runs. Every one of those is a thing the engine now decides with, and none
+   * of it was visible anywhere.
+   */
+  #detailTies(id) {
+    const game = this.game;
+    const report = tiesReport(game, id, 4);
+    const isPlayer = id === game.playerId;
+    const grip = isPlayer ? null : leverage(game, game.playerId, id);
+    const arm = isPlayer ? null : reachDetail(game, game.playerId, id);
+    const pct = (v) => `${(v * 100).toFixed(1)}%`;
+
+    return h('div.detail__section',
+      h('h3.subhead', t('detail.ties', 'What it runs on')),
+      h('div.detail__grid',
+        detailStat(t('detail.openness', 'Exposed to abroad'), `${Math.round(report.openness * 100)}%`,
+          t('detail.opennessHint', 'share of the economy that runs through other countries')),
+        detailStat(t('detail.tradeOpen', 'Of that, open'), `${Math.round(report.health * 100)}%`,
+          report.health >= 0.99
+            ? t('detail.nothingShut', 'nothing is closed')
+            : t('detail.growthCost', '{n} points of growth a quarter', { n: report.drag.toFixed(2) })),
+        isPlayer ? null : detailStat(t('detail.leverage', 'Leverage'),
+          t(`ties.verdict.${grip.verdict}`, GRIP_WORDS[grip.verdict]),
+          t('detail.leverageHint', 'they carry {theirs}, you carry {yours}',
+            { theirs: pct(grip.theirs), yours: pct(grip.yours) })),
+        isPlayer ? null : detailStat(t('detail.reach', 'Your reach there'),
+          `${Math.round(arm.value * 100)}%`,
+          arm.why === 'border'
+            ? t('detail.reachBorder', 'you share a border')
+            : arm.why === 'staging'
+              ? t('detail.reachStaging', 'staging through {via}', { via: tNation(defOf(game, arm.via)) })
+              : t('detail.reachDistance', '{km},000 km away', { km: Math.round(arm.km / 1000) })),
+      ),
+      report.dependsOn.length
+        ? h('div.chips.chips--tight',
+            report.dependsOn.slice(0, 4).map((entry) =>
+              h('span.tiechip', { class: entry.open < 1 ? 'tiechip is-shut' : 'tiechip' },
+                `${entry.def?.flag || ''} ${tNation(entry.def)} ${pct(entry.share)}`)),
+          )
         : null,
     );
   }
@@ -2829,6 +3076,17 @@ export function describeEffects(action) {
       text: t('effect.tension', 'World tension {n}', { n: fmt(success.worldTension) }),
       dir: success.worldTension < 0 ? 'up' : 'down',
     });
+  }
+  // Commercial orders say what they close or re-open, because the size of the
+  // cut is the whole content of the order.
+  if (action.trade?.sever) {
+    pills.push({
+      text: t('effect.severs', 'Trade between you {n}%', { n: fmt(-action.trade.sever * 100) }),
+      dir: 'down',
+    });
+  }
+  if (action.trade?.restore) {
+    pills.push({ text: t('effect.restores', 'Trade between you {n}%', { n: fmt(100) }), dir: 'up' });
   }
   if (typeof success.treasuryPctGdp === 'number' && success.treasuryPctGdp !== 0) {
     pills.push({

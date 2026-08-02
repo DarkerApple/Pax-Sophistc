@@ -1655,3 +1655,76 @@ kbd {
   .field--narrow { max-width: none; }
   .own__shapes { grid-template-columns: 1fr; }
 }
+
+/* ── Ties: the second map ─────────────────────────────────────────────────── */
+
+.ties { display: flex; flex-direction: column; gap: 0.25rem; }
+.tie { display: flex; align-items: center; gap: 0.45rem; font-size: 0.78rem; }
+.tie.is-shut { opacity: 0.62; }
+.tie__who {
+  display: inline-flex; align-items: baseline; gap: 0.3rem; background: none; border: none;
+  padding: 0; cursor: pointer; color: var(--ink); font-size: 0.78rem; text-align: left;
+  min-width: 8.5rem; max-width: 9.5rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.tie__who:hover { color: var(--accent); }
+.tie__flag { font-size: 0.9rem; }
+.tie__track { flex: 1; min-width: 2rem; height: 5px; background: var(--panel-2); border-radius: 999px; overflow: hidden; }
+.tie__fill { display: block; height: 100%; background: var(--accent); }
+.tie__value { font-family: var(--mono); font-size: 0.72rem; color: var(--muted); min-width: 2.9rem; text-align: right; }
+.tie__grip { font-size: 0.64rem; color: var(--muted-2); min-width: 7.5rem; text-align: right; }
+.tie__shut { font-size: 0.64rem; color: var(--warn); font-family: var(--mono); min-width: 7.5rem; text-align: right; }
+.tie__what { display: flex; flex-wrap: wrap; gap: 0.2rem; margin: 0 0 0.3rem 8.9rem; }
+.tie__tag {
+  font-size: 0.62rem; color: var(--muted-2); background: var(--panel-2);
+  border-radius: 999px; padding: 0.02rem 0.4rem;
+}
+.tiechip {
+  font-size: 0.68rem; color: var(--muted); background: var(--panel-2);
+  border: 1px solid var(--line); border-radius: 999px; padding: 0.1rem 0.45rem;
+}
+.tiechip.is-shut { border-color: var(--warn); color: var(--warn); }
+
+.severed { display: flex; align-items: baseline; gap: 0.4rem; font-size: 0.75rem; padding: 0.12rem 0; flex-wrap: wrap; }
+.severed__flag { font-size: 0.9rem; }
+.severed__name { font-weight: 600; }
+.severed__label { color: var(--muted); font-size: 0.7rem; }
+.severed__cost { margin-left: auto; font-family: var(--mono); font-size: 0.7rem; color: var(--warn); }
+.severed__left { font-family: var(--mono); font-size: 0.68rem; color: var(--muted-2); }
+
+.exchange { display: flex; align-items: center; gap: 0.45rem; background: var(--bg-2); border-radius: var(--radius-sm); padding: 0.35rem 0.5rem; margin-bottom: 0.25rem; }
+.exchange__flag { font-size: 1rem; }
+.exchange__body { flex: 1; min-width: 0; }
+.exchange__name { font-size: 0.78rem; font-weight: 600; }
+.exchange__ask { font-size: 0.68rem; color: var(--muted); overflow: hidden; text-overflow: ellipsis; }
+.exchange__odds { font-family: var(--mono); font-size: 0.7rem; color: var(--muted-2); white-space: nowrap; }
+.exchange__due { font-family: var(--mono); font-size: 0.68rem; color: var(--accent); white-space: nowrap; }
+.exchange--settled { opacity: 0.75; }
+.exchange__status { font-family: var(--mono); font-size: 0.68rem; color: var(--muted-2); }
+.exchange__status.is-accepted { color: var(--good, var(--accent)); }
+.exchange__status.is-refused { color: var(--warn); }
+
+/* ── The theatre, and the war that stops being somebody's ─────────────────── */
+
+.weights { display: flex; flex-direction: column; gap: 0.12rem; margin-top: 0.35rem; }
+.weight { display: flex; align-items: center; gap: 0.35rem; }
+.weight__flag { font-size: 0.85rem; width: 1.2rem; }
+.weight__track { flex: 1; min-width: 2rem; height: 4px; background: var(--panel-2); border-radius: 999px; overflow: hidden; }
+.weight__fill { display: block; height: 100%; background: var(--muted-2); }
+.weight.is-attackers .weight__fill { background: var(--st-serious, var(--warn)); }
+.weight.is-defenders .weight__fill { background: var(--accent); }
+.weight__value { font-family: var(--mono); font-size: 0.66rem; color: var(--muted-2); min-width: 2.2rem; text-align: right; }
+.warcard.is-general { border-left: 3px solid var(--warn); }
+.warcard__general {
+  font-size: 0.62rem; letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--warn); font-family: var(--mono);
+}
+.warcard__note { font-size: 0.68rem; color: var(--muted-2); margin: 0.28rem 0 0; }
+
+.generalwar {
+  background: color-mix(in srgb, var(--warn) 12%, var(--bg-2));
+  border-left: 3px solid var(--warn); border-radius: var(--radius-sm);
+  padding: 0.5rem 0.65rem; margin-bottom: 0.7rem;
+}
+.generalwar--brink { background: var(--bg-2); border-left-color: var(--muted-2); }
+.generalwar__name { font-family: var(--display); font-size: 0.95rem; margin: 0; }
+.generalwar__note { font-size: 0.74rem; color: var(--muted); margin: 0.25rem 0 0; }
