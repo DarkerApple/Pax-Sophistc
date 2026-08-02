@@ -2,6 +2,14 @@
 // it looks, and (optionally) which free AI provider.
 
 import { REGIONS, playableNations, powerRank } from '../data/nations.js';
+import {
+  ARCHETYPES,
+  byDifficulty,
+  createCountry,
+  recommendedStarts,
+  startDifficulty,
+  validateCountry,
+} from '../engine/starts.js';
 import { DIFFICULTY_MAX, DIFFICULTY_MIN, difficultyModifiers, difficultyPreview } from '../engine/difficulty.js';
 import { WORLD_MODES, modePreview } from '../engine/worldmodes.js';
 import { PROVIDERS, PROVIDERS_BY_ID } from '../ai/providers.js';
@@ -27,6 +35,12 @@ export class SetupScreen {
       seed: '',
       search: '',
       region: 'all',
+      // Easiest-first is the default order, because the commonest first move is
+      // "which of these should I actually pick".
+      order: 'ease',
+      // The build-your-own panel, and the country it is describing.
+      ownOpen: false,
+      own: { name: '', capital: '', flag: '🏳️', region: 'western-europe', archetype: 'trading-port' },
       ai: loadAiConfig(),
       testStatus: null,
       // Which sidebar folds are open. Kept here because choosing a theme
@@ -45,8 +59,10 @@ export class SetupScreen {
         h('div.setup__grid',
           h('section.panel.panel--wide',
             h('h2.panel__title', t('setup.chooseCountry', 'Choose your country')),
+            this.#suggestedStarts(),
             this.#countryFilters(),
             this.#countryGrid(),
+            this.#ownCountry(),
           ),
           h('div.setup__side',
             // Difficulty first: it is the one control every player touches, and
@@ -147,6 +163,144 @@ export class SetupScreen {
     );
   }
 
+  /**
+   * The six gentlest countries on the board, as buttons.
+   *
+   * The commonest first move is picking the United States because it is at the
+   * top of the list, and the United States is one of the harder runs — fifty
+   * relationships and a world that reacts to everything. This says so.
+   */
+  #suggestedStarts() {
+    const picks = recommendedStarts(6);
+    return h('div.suggested',
+      h('div.suggested__label', t('setup.goodFirst', 'Good for a first run')),
+      h('div.suggested__row',
+        picks.map(({ nation, band }) =>
+          h('button.suggested__pick', {
+            class: this.state.nationId === nation.id ? 'suggested__pick is-active' : 'suggested__pick',
+            title: t(`start.${band.id}Hint`, band.hint),
+            onclick: () => { this.state.nationId = nation.id; this.render(); },
+          },
+            h('span.suggested__flag', nation.flag),
+            h('span.suggested__name', tNation(nation)),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /**
+   * A country that does not exist.
+   *
+   * Not a points-buy screen — a name, a place and one of six shapes a player
+   * can actually picture. Everything else is derived, and the result is
+   * registered so the rest of the engine cannot tell it from one that shipped.
+   */
+  #ownCountry() {
+    const own = this.state.own;
+    const check = validateCountry(own);
+    const archetype = ARCHETYPES.find((a) => a.id === own.archetype) || ARCHETYPES[0];
+
+    return h('details.panel.panel--fold.panel--own', {
+      open: this.state.ownOpen,
+      ontoggle: (e) => { this.state.ownOpen = e.currentTarget.open; },
+    },
+      h('summary.panel__fold',
+        h('span.panel__title', t('own.title', 'Or invent one')),
+        h('span.panel__foldValue', own.name || t('own.none', 'not yet')),
+      ),
+      h('div.panel__foldBody',
+        h('p.panel__note',
+          t('own.body',
+            'A country of your own, dropped into a world of fifty-six that will treat it exactly like the rest.')),
+
+        h('div.own__row',
+          h('label.field',
+            h('span.field__label', t('own.name', 'Name')),
+            h('input.input', {
+              type: 'text', value: own.name, maxlength: 34,
+              placeholder: t('own.namePlaceholder', 'The Republic of ——'),
+              oninput: (e) => { own.name = e.target.value; this.#refreshOwn(); },
+            }),
+          ),
+          h('label.field.field--narrow',
+            h('span.field__label', t('own.flag', 'Flag')),
+            h('input.input', {
+              type: 'text', value: own.flag, maxlength: 4,
+              oninput: (e) => { own.flag = e.target.value; this.#refreshOwn(); },
+            }),
+          ),
+        ),
+        h('div.own__row',
+          h('label.field',
+            h('span.field__label', t('own.capital', 'Capital')),
+            h('input.input', {
+              type: 'text', value: own.capital, maxlength: 26,
+              placeholder: t('own.capitalPlaceholder', 'leave blank and one will be named for you'),
+              oninput: (e) => { own.capital = e.target.value; },
+            }),
+          ),
+          h('label.field',
+            h('span.field__label', t('own.where', 'Where')),
+            h('select.input', {
+              onchange: (e) => { own.region = e.target.value; this.#refreshOwn(); },
+            },
+              REGIONS.map((r) =>
+                h('option', { value: r.id, selected: own.region === r.id }, tLabel('regions', r.id, r.name))),
+            ),
+          ),
+        ),
+
+        h('span.field__label', t('own.shape', 'What kind of country')),
+        h('div.own__shapes',
+          ARCHETYPES.map((a) =>
+            h('button.own__shape', {
+              class: own.archetype === a.id ? 'own__shape is-active' : 'own__shape',
+              onclick: () => { own.archetype = a.id; this.render(); },
+            },
+              h('div.own__shapeName', t(`archetype.${a.id}`, a.name)),
+              h('div.own__shapeBlurb', t(`archetype.${a.id}Blurb`, a.blurb)),
+              h('div.own__shapeStats',
+                `$${a.stats.gdp}T · ${a.stats.population}M · ${t('stat.military', 'Mil')} ${a.stats.military} · ${t('stat.stability', 'Stab')} ${a.stats.stability}`),
+              h('div.own__shapeEase', { class: `own__shapeEase is-${a.difficulty}` },
+                t(`start.${a.difficulty}`, a.difficulty)),
+            ),
+          ),
+        ),
+
+        // Always rendered, disabled until the spec is usable — otherwise typing a
+        // name has nothing to enable, because the button does not exist yet.
+        h('button.btn.btn--primary.btn--block', {
+          disabled: !check.ok,
+          onclick: () => {
+            const spec = { ...this.state.own };
+            if (!validateCountry(spec).ok) return;
+            const def = createCountry(spec);
+            this.state.nationId = def.id;
+            this.state.ownOpen = false;
+            this.render();
+          },
+        }, check.ok
+          ? t('own.create', 'Found {name} and play as it', { name: own.name })
+          : check.problems[0]),
+      ),
+    );
+  }
+
+  /** Only the create button and the summary depend on the text fields. */
+  #refreshOwn() {
+    const summary = this.root.querySelector('.panel--own .panel__foldValue');
+    if (summary) summary.textContent = this.state.own.name || t('own.none', 'not yet');
+    const button = this.root.querySelector('.panel--own .btn--primary');
+    const check = validateCountry(this.state.own);
+    if (button) {
+      button.disabled = !check.ok;
+      button.textContent = check.ok
+        ? t('own.create', 'Found {name} and play as it', { name: this.state.own.name })
+        : check.problems[0];
+    }
+  }
+
   #countryFilters() {
     return h('div.filters',
       h('input.input.filters__search', {
@@ -155,6 +309,19 @@ export class SetupScreen {
         value: this.state.search,
         oninput: (e) => { this.state.search = e.target.value; this.#refreshGrid(); },
       }),
+      h('div.chips.chips--tight',
+        h('span.filters__sortLabel', t('setup.order', 'Order')),
+        [
+          ['ease', t('setup.orderEase', 'Easiest first')],
+          ['power', t('setup.orderPower', 'Most powerful first')],
+          ['name', t('setup.orderName', 'A–Z')],
+        ].map(([id, label]) =>
+          h('button.chip.chip--sm', {
+            class: this.state.order === id ? 'chip chip--sm is-active' : 'chip chip--sm',
+            onclick: () => { this.state.order = id; this.#refreshGrid(); },
+          }, label),
+        ),
+      ),
       h('div.chips',
         h('button.chip', {
           class: this.state.region === 'all' ? 'chip is-active' : 'chip',
@@ -172,7 +339,7 @@ export class SetupScreen {
 
   #visibleNations() {
     const q = this.state.search.trim().toLowerCase();
-    return playableNations().filter((n) => {
+    const matched = playableNations().filter((n) => {
       if (this.state.region !== 'all' && n.region !== this.state.region) return false;
       if (!q) return true;
       return (
@@ -184,6 +351,10 @@ export class SetupScreen {
         n.tags.some((tag) => tag.includes(q))
       );
     });
+
+    if (this.state.order === 'name') return matched.sort((a, b) => tNation(a).localeCompare(tNation(b)));
+    if (this.state.order === 'power') return matched.sort((a, b) => powerRank(b) - powerRank(a));
+    return matched.sort(byDifficulty);
   }
 
   #countryGrid() {
@@ -215,7 +386,7 @@ export class SetupScreen {
       : tier >= 74 ? t('tier.middle', 'Middle power')
       : t('tier.small', 'Small power');
 
-    const ease = countryEase(nation);
+    const start = startDifficulty(nation);
 
     return h('button.country', {
       class: selected ? 'country is-selected' : 'country',
@@ -230,8 +401,13 @@ export class SetupScreen {
         ),
       ),
       h('p.country__brief', tNation(nation, 'brief')),
+      h('div.country__why',
+        start.reasons.slice(0, 3).map((r) => h('span.country__reason', r.text))),
       h('div.country__stats',
-        h('span.country__ease', { style: { color: ease.colour }, title: ease.hint }, ease.label),
+        h('span.country__ease', {
+          class: `country__ease is-${start.band.id}`,
+          title: `${t(`start.${start.band.id}Hint`, start.band.hint)} — ${start.reasons.map((r) => r.text).join(', ')}`,
+        }, t(`start.${start.band.id}`, start.band.label)),
         stat(t('stat.gdp', 'GDP'), `$${nation.gdp.toFixed(2)}T`),
         stat(t('stat.population', 'Pop'), `${nation.population}M`),
         stat(t('stat.military', 'Mil'), nation.military),
@@ -504,16 +680,6 @@ export class SetupScreen {
 }
 
 /** A rough "how forgiving is this country to play" read, for newcomers. */
-export function countryEase(nation) {
-  const score =
-    nation.stability * 0.5 +
-    (100 - nation.unrest) * 0.25 +
-    Math.min(100, Math.log10(Math.max(nation.gdp, 0.01) * 1000) * 22) * 0.25;
-
-  if (score >= 68) return { label: t('ease.gentle', 'Gentle start'), colour: 'var(--good)', hint: t('ease.gentleHint', 'Stable, solvent, few enemies. A good first run.') };
-  if (score >= 54) return { label: t('ease.moderate', 'Moderate'), colour: 'var(--warn)', hint: t('ease.moderateHint', 'Real problems, but room to manoeuvre.') };
-  return { label: t('ease.hard', 'Hard start'), colour: 'var(--bad)', hint: t('ease.hardHint', 'Fragile, poor, or surrounded. Expect to struggle.') };
-}
 
 function stat(label, value) {
   return h('div.microstat', h('span.microstat__label', label), h('span.microstat__value', String(value)));

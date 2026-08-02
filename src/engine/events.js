@@ -7,6 +7,7 @@
 
 import { BLOCS, NATIONS_BY_ID } from '../data/nations.js';
 import { causeFor } from './causes.js';
+import { DECISIONS } from './decisions.js';
 import {
   activeWarsFor,
   blocsOf,
@@ -897,6 +898,12 @@ export const EVENTS = [
     },
   },
 ];
+
+// The desk decisions live in their own file — twenty of them alongside a
+// hundred ambient events would bury both, and a decision is a different kind of
+// thing from a headline: it is a thing already happened that is now yours.
+EVENTS.push(...DECISIONS);
+
 
 /**
  * Roll this turn's events.

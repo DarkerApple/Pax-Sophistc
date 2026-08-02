@@ -561,6 +561,15 @@ export function registerNation(def) {
   return def;
 }
 
+/**
+ * Every country the lookup knows about, including ones invented mid-run and
+ * ones a player built at setup. NATIONS itself stays the shipped roster, so a
+ * breakaway republic from one run never turns up in another run's setup screen.
+ */
+export function allKnownNations() {
+  return Object.values(NATIONS_BY_ID);
+}
+
 /** Explicit relationship anchors that history has already decided for us. */
 export const RELATION_ANCHORS = [
   ['usa', 'chn', -34], ['usa', 'rus', -62], ['usa', 'gbr', 82], ['usa', 'can', 74],
@@ -593,7 +602,8 @@ export const RELATION_ANCHORS = [
  * Every nation in the file is playable — the game does not gate countries.
  */
 export function playableNations() {
-  return [...NATIONS].sort((a, b) => powerRank(b) - powerRank(a));
+  const invented = allKnownNations().filter((n) => n.custom);
+  return [...NATIONS, ...invented].sort((a, b) => powerRank(b) - powerRank(a));
 }
 
 /** Rough composite used for sorting and for "great power" checks. */

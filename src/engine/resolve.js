@@ -9,6 +9,7 @@ import { annexOccupied, concludeWar, declareWar, findWar, pressWar } from './war
 import { realign } from './statecraft.js';
 import { chargeExit, noteAccession, open as openCommitment } from './commitments.js';
 import { hardenAgainst } from './intel.js';
+import { factionsOf } from './factions.js';
 import {
   TREATY_KINDS,
   abrogate as abrogateTreaty,
@@ -383,17 +384,60 @@ export function resolveDecision(game, rng, mods, choiceId) {
     state.treasury -= amount;
   }
 
+  const record = {};
   const hasChance = typeof choice.chance === 'number';
   const succeeded = !hasChance || rng.next() < clamp(choice.chance - mods.successPenalty * 0.6, 0.05, 0.95);
   const effect = succeeded ? choice.effect : choice.failEffect || choice.effect;
 
   const applied = applyEffect(game, game.playerId, decision.targetId, effect);
 
+  // A decision is read by the four domestic creditors exactly as an order is —
+  // which is the point of choices that are only hard because of who is watching.
+  if (choice.factions) {
+    const factions = factionsOf(game);
+    for (const [id, delta] of Object.entries(choice.factions)) {
+      if (!factions[id]) continue;
+      factions[id].mood = clamp(factions[id].mood + delta * (succeeded ? 1 : 0.5));
+    }
+    record.factions = choice.factions;
+  }
+
+  // Some of them are decisions about a war, and move the front rather than the
+  // national statistics.
+  const warSpec = succeeded ? choice.warEffect : (choice.warEffectOnFailure || null);
+  if (warSpec) {
+    const war = activeWarFor(game, game.playerId);
+    if (war) {
+      const attacking = war.attackers.includes(game.playerId);
+      const sign = attacking ? 1 : -1;
+      const ownSide = attacking ? 'attackers' : 'defenders';
+      const enemySide = attacking ? 'defenders' : 'attackers';
+      if (warSpec.warScore) war.warScore = clamp(war.warScore + warSpec.warScore * sign, -100, 100);
+      if (warSpec.ownExhaustion) {
+        war.exhaustion[ownSide] = clamp(war.exhaustion[ownSide] + warSpec.ownExhaustion, 0, 100);
+      }
+      if (warSpec.enemyExhaustion) {
+        war.exhaustion[enemySide] = clamp(war.exhaustion[enemySide] + warSpec.enemyExhaustion, 0, 100);
+      }
+      if (warSpec.casualties) war.casualties += Math.round(warSpec.casualties);
+      record.warId = war.id;
+    }
+  }
+
+  // And some of them end one.
+  if (choice.seeksPeace && succeeded) {
+    const war = activeWarFor(game, game.playerId);
+    if (war) {
+      concludeWar(game, war, rng, 'negotiated');
+      record.endedWar = true;
+    }
+  }
+
   if (choice.escalates && !succeeded && decision.targetId) {
     declareWar(game, decision.targetId, game.playerId, { rng, reason: 'ultimatum rejected' });
   }
 
-  const record = {
+  Object.assign(record, {
     type: 'decision',
     title: decision.title,
     choice: choice.label,
@@ -402,7 +446,7 @@ export function resolveDecision(game, rng, mods, choiceId) {
       succeeded ? 'It worked.' : 'It did not go as intended.'
     } ${describeChanges(applied.changes).join(', ')}`,
     changes: applied.changes,
-  };
+  });
 
   logEvent(game, { type: 'decision', severity: succeeded ? 'info' : 'major', text: record.text });
   game.pendingDecision = null;

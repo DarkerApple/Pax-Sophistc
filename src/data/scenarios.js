@@ -56,6 +56,21 @@ export function hasScenario(id) {
   return REGISTRY.has(id);
 }
 
+/**
+ * Add a country to a scenario after the fact.
+ *
+ * A country a player invents at setup has to join the roster the world is built
+ * from, not merely the id lookup — otherwise createGame refuses to start as it,
+ * and the world it joins never contains it.
+ */
+export function addNationToScenario(def, scenarioId = DEFAULT_SCENARIO) {
+  const scenario = REGISTRY.get(scenarioId);
+  if (!scenario || !def?.id) return null;
+  registerNation(def);
+  if (!scenario.nations.some((n) => n.id === def.id)) scenario.nations.push(def);
+  return def;
+}
+
 export const DEFAULT_SCENARIO = 'current-world';
 
 registerScenario({

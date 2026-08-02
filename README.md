@@ -10,7 +10,7 @@ writes the briefings and judges your freeform orders — and every provider it s
 
 ```bash
 npm start          # http://localhost:5173
-npm test           # 124 engine, territory, coalition, AI-boundary, world and translation tests
+npm test           # 229 engine, orders, treaties, politics, endgame, desk, world and translation tests
 ```
 
 There is nothing to install. `npm start` runs a ~60-line static file server from
@@ -22,8 +22,23 @@ Pages, Netlify, a USB stick).
 ## What you actually do
 
 Each turn is one **quarter**. You get a budget (a share of GDP), some **political capital**,
-and up to **four orders**. Then the other 55 countries take their turn, the world throws
-events at you, wars grind forward, and the books get balanced.
+and as many orders as your **leadership** is worth. Then the other 55 countries take their
+turn, the world throws events at you, wars grind forward, and the books get balanced.
+
+- **Leadership buys slots on the desk.** The order limit used to be four, always, for
+  everybody — a government with eighty-per-cent approval, a working civil service, four
+  contented factions and eight years of practice got exactly as many decisions as one that
+  had just survived a coup. Leadership is the standing of the *office*: public consent,
+  the machinery of state, your own coalition, time in the building and the record, minus
+  whatever your streets are taking from you. It is worth **two to seven orders a quarter**,
+  the panel shows all five components so a slot lost is a slot you can explain, and it
+  names what you would have to move to earn the next one. Difficulty shifts the whole
+  ladder, which is what makes a hard run feel cramped from the first quarter.
+- **The same order cannot be queued twice.** Doing the same thing twice in one quarter was
+  never a strategy — it was an oversight that let you stack one modifier and skip the rest
+  of the catalogue. Repeating an order against a *different* country is a real plan and is
+  still allowed, and orders that contradict each other (two alignment changes, two treaty
+  calls, two annexations) will not sit on the desk together.
 
 - **348 orders** across ten tabs — Quick, Economy, Society, Domestic, Military, Diplomacy,
   Alliances, Intelligence, Technology and the War Room — from `Fiscal Stimulus` and
@@ -68,8 +83,16 @@ events at you, wars grind forward, and the books get balanced.
   Beijing does") and your advisers price it, set the odds, and tell you the risk. This is
   the one place the language model touches the rules — and everything it returns is clamped
   before it reaches the simulation (see [Trust boundary](#trust-boundary)).
-- **Crisis decisions** land on your desk: an ultimatum, a corruption scandal, a defector, a
-  closed strait. You choose, or you decline to choose and pay for that too.
+- **Twenty-five decisions** land on your desk, and none of them is the same shape. Not just
+  *concede, stall or refuse*: choices that cost money rather than standing (a bank that will
+  not open Monday, a windfall you can spend once), choices where every option is bad (the
+  city or the army, a plague ship in the roads, hostages), choices with no reversible answer
+  (a general who will not stand down, a verdict, a succession), and choices that are only
+  hard because of who at home is watching (an ally calling in the paper, a basing request, a
+  refugee column at the border, terms offered mid-war). Each one prices itself — what it
+  costs, what the odds are, whether it can be undone — and names which of your four factions
+  will be pleased and which will not. You choose, or you decline to choose and pay for that
+  too.
 - **Things that were nobody's plan.** Riots, epidemics, power-plant failures, industrial
   disasters, earthquakes, harvest failures, currency crises, general strikes, assassinations,
   coups at home and coups next door. Each carries **a stated cause drawn from your own
@@ -329,9 +352,26 @@ already decided — Russia/Ukraine at −96, India/Pakistan at −74, Israel/Ira
 Figures are approximate and tuned for playability, not for citation. They are game
 parameters, not a data source.
 
-Every country is playable, and each card tells you up front whether it is a *gentle start*,
-*moderate*, or a *hard start*. Some are much harder than others, and that is the point:
+Every country is playable, and each card carries a **start rating** — gentle, steady,
+demanding, hard or brutal — built from the things that will actually decide your first
+decade: solvency and debt, stability and unrest, whether you are already at war, how many
+hostile neighbours share your border, whether you sit on a flashpoint, and how much of the
+world's attention your weight attracts. The rating is not a mood; each card lists **the
+reasons behind it in words** ("two hostile neighbours", "a war already running", "a world
+that reacts to everything you do"), so a hard start is a hard start for stated causes.
 Switzerland at difficulty 10 is a gentler run than Ukraine at difficulty 5.
+
+The setup screen opens with **six suggested starts** across the whole range rather than a
+wall of 56 flags, and the roster can be sorted by name, by power or by how hard it will be.
+The United States is not the obvious answer and is not first on the list — being the largest
+power buys you room to make mistakes and a world that reacts to every one of them.
+
+**Or invent a country.** Six archetypes — a trading port, a resource republic, an industrial
+middle power, a young giant, a fortress state, a new republic — give you a starting shape;
+you name it, place it in a region, pick a government, and it is registered into the world
+with derived statistics, a capital, relations, neighbours and a seat in the rankings like
+anybody else. It plays exactly as a real country does, and the rest of the board treats it
+the same way.
 
 ## The difficulty slider
 
@@ -479,7 +519,7 @@ without being documented and cannot be documented without existing.
 
 The whole interface ships in **English and Korean**, switchable from **the header on the
 setup screen and the top bar in game** — one click, no menus — and remembered between runs. That covers the chrome, all 56 country names and one-line briefs,
-all 51 order names and descriptions, the world modes, difficulty tiers, themes, help,
+all 348 order names and descriptions, the world modes, difficulty tiers, themes, help,
 events, decisions, escalation and war text — and the locally generated quarterly briefing,
 which is composed from translated fragments rather than translated after the fact.
 
@@ -583,6 +623,7 @@ src/
     difficulty.js     the slider → every knob in the simulation
     worldmodes.js     Stable / Current / Chaotic, composed with difficulty
     consequences.js   escalation ladders and chain reactions
+    leadership.js     the standing of the office → how many orders a quarter
     factions.js       the four creditors of political capital
     nemesis.js        the rivalry, and the file behind it
     intel.js          what you actually know about somebody else
@@ -609,7 +650,9 @@ src/
     effects.js        the shared "something happened to a country" vocabulary
     resolve.js        order → outcome tier → world changes
     opponents.js      how the other 55 countries decide their quarter
-    events.js         ambient events and desk-level decisions
+    events.js         ambient events, wired to the decision catalogue
+    decisions.js      the twenty-five things that land on the desk
+    starts.js         how hard each country is to start as, and inventing one
     war.js            declaration, the quarterly grind, and how wars end
     turn.js           the quarter, the economy, scoring, endgame
   ai/
@@ -631,7 +674,7 @@ src/
     setup.js          new-game screen
     game.js           command screen: dashboard, inspector, feed, planner
     dom.js, store.js  helpers and persistence
-tests/                engine, orders, treaties, politics, endgame, territory,
+tests/                engine, orders, treaties, politics, endgame, desk, territory,
                       coalitions, worldview, AI-boundary, world and translation tests
 ```
 

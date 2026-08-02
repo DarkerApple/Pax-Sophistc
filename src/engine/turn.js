@@ -12,6 +12,7 @@ import { resolveAction, resolveDecision } from './resolve.js';
 import { driftAlignments, reconcileSovereignty } from './statecraft.js';
 import { containment, primaryThreat } from './coalitions.js';
 import { ensureTerm } from './lifecycle.js';
+import { orderSlots } from './leadership.js';
 import { recordOrder, tickFactions } from './factions.js';
 import { noteQuarter, updateNemesis } from './nemesis.js';
 import { decayIntel, recordIntel } from './intel.js';
@@ -95,8 +96,9 @@ export function advanceTurn(game, { orders = [], decisionChoice = null } = {}) {
       game.pendingDecision = null;
     }
 
-    // 2. Player orders, and whatever they set off.
-    for (const order of orders.slice(0, 4)) {
+    // 2. Player orders, and whatever they set off. How many the desk can carry
+    //    is the standing of the office, not a constant.
+    for (const order of orders.slice(0, orderSlots(game))) {
       const outcome = resolveAction(game, rng, mods, order, game.playerId);
       if (!outcome) continue;
       report.playerOutcomes.push(outcome);

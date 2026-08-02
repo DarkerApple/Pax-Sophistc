@@ -74,6 +74,7 @@ import { CLAUSE_TYPES, congressOf, lobby, propose, tally } from '../engine/congr
 import { ambitionProgress, revealAmbitions } from '../engine/ambitions.js';
 import { chronicle, chronicleText } from '../engine/chronicle.js';
 import { concludeTerm, electionState, inheritance } from '../engine/lifecycle.js';
+import { canQueue, leadership, nextSlotAt, orderSlots } from '../engine/leadership.js';
 import { TREATY_KINDS, alliesOf, treatyReport } from '../engine/treaties.js';
 import { formalName } from '../engine/warnames.js';
 import { MAP_FOCUSES, VIEW_MODES, WorldMap, alignmentOf, legendFor } from './map.js';
@@ -499,6 +500,7 @@ export class GameScreen {
             land.change === null ? null : land.change > 0 ? 'var(--good)' : 'var(--bad)'),
         );
       })(),
+      this.#leadershipBlock(),
       h('div.stats', STAT_ROWS.map((row) => this.#statBar(row))),
       state.modifiers.length
         ? h('div.modifiers',
@@ -535,6 +537,48 @@ export class GameScreen {
             }),
           )
         : null,
+    );
+  }
+
+  /**
+   * The standing of the office, and what it buys.
+   *
+   * This is the panel that answers "why can I only issue three orders" — every
+   * component is named, and the one holding you back is the one to work on.
+   */
+  #leadershipBlock() {
+    const game = this.game;
+    const lead = leadership(game);
+    const next = nextSlotAt(game);
+
+    return h('div.leadership', {
+      title: t('leadership.hint',
+        'How much authority the office commands, and therefore how many orders it can carry in a quarter.'),
+    },
+      h('div.leadership__head',
+        h('span.leadership__label', t('leadership.title', 'Leadership')),
+        h('span.leadership__slots',
+          t('leadership.slots', '{n} orders', { n: lead.slots })),
+      ),
+      h('div.stat__track',
+        h('div.stat__fill', { style: { width: `${lead.value}%`, background: statColour(lead.value) } }),
+      ),
+      h('div.leadership__band',
+        h('span', t(`leadership.${lead.band.id}`, lead.band.label)),
+        h('span.leadership__value', String(lead.value)),
+      ),
+      h('div.leadership__parts',
+        lead.components.map((c) =>
+          h('span.leadership__part', { class: c.value >= 55 ? 'leadership__part is-up' : 'leadership__part is-down' },
+            `${t(`leadership.${c.id}`, c.label)} ${c.value}`)),
+      ),
+      next
+        ? h('div.leadership__next',
+            t('leadership.next', '{n} more buys a fifth order — the weakest leg is {lever}.', {
+              n: next.gap,
+              lever: t(`leadership.${next.lever.id}`, next.lever.label),
+            }))
+        : h('div.leadership__next', t('leadership.maxed', 'As many orders as this office can carry.')),
     );
   }
 
@@ -1628,7 +1672,10 @@ export class GameScreen {
     return h('section.panel.panel--planner',
       h('div.panel__titlebar',
         h('h2.panel__title', t('orders.title', 'Orders for the quarter')),
-        h('span.badge', t('orders.count', '{n} of 4', { n: this.orders.length })),
+        h('span.badge', {
+          title: t('orders.slotsHint',
+            'How many orders this government can carry in a quarter. It is your leadership, not a constant.'),
+        }, t('orders.count', '{n} of {slots}', { n: this.orders.length, slots: orderSlots(game) })),
       ),
 
       h('div.budget',
@@ -1741,14 +1788,19 @@ export class GameScreen {
     const state = game.nations[game.playerId];
     const mods = gameModifiers(game);
     const cost = actionCost(action, state);
-    const queued = this.orders.length >= 4;
+    const queued = this.orders.length >= orderSlots(game);
     const chance = successChance(game, action, game.playerId, null, mods);
 
     const remainingMoney = availableFunds(state) - this.orders.reduce((s, o) => s + o.cost, 0);
     const remainingPc = game.politicalCapital - this.orders.reduce((s, o) => s + o.pc, 0);
-    const blocked = queued || cost > remainingMoney || action.pc > remainingPc;
-    const why = queued
-      ? t('orders.limitReached', 'Four orders is the limit for one quarter')
+    // An untargeted order already on the desk cannot go on it twice. A targeted
+    // one can, against somebody else, so the card itself stays live.
+    const already = this.orders.some((o) => o.actionId === action.id && !o.targetId && !action.target);
+    const blocked = queued || already || cost > remainingMoney || action.pc > remainingPc;
+    const why = already
+      ? t('orders.alreadyQueued', 'Already queued. Doing the same thing twice in one quarter is not doing it twice as hard.')
+      : queued
+      ? t('orders.limitReached', '{n} orders is what this government can carry in a quarter', { n: orderSlots(game) })
       : cost > remainingMoney
         ? t('orders.needMore', 'Needs {amount} more', { amount: money(cost - remainingMoney) })
         : action.pc > remainingPc
@@ -1807,6 +1859,11 @@ export class GameScreen {
       return;
     }
     const mods = gameModifiers(this.game);
+    const room = canQueue(this.game, this.orders, action, targetId);
+    if (!room.ok) {
+      this.app.toast(room.reason);
+      return;
+    }
     const availability = actionAvailability(this.game, action, targetId);
     if (!availability.ok) {
       this.app.toast(availability.reason);
@@ -1994,25 +2051,72 @@ export class GameScreen {
 
   // ── Modals ───────────────────────────────────────────────────────────────
 
+  /**
+   * The thing on the desk that will not wait.
+   *
+   * Every option now shows what it costs, what it risks, and which of the four
+   * domestic creditors will be pleased and which will not — because a decision
+   * that is only hard because of who is watching should look hard for that
+   * reason rather than for none.
+   */
   #decisionModal() {
-    const decision = this.game.pendingDecision;
+    const game = this.game;
+    const decision = game.pendingDecision;
+    const state = game.nations[game.playerId];
+    const target = decision.targetId ? defOf(game, decision.targetId) : null;
+
+    const priceOf = (choice) => {
+      if (!choice.cost) return null;
+      return Math.round(((choice.cost.pctGdp || 0) / 100) * state.gdp * 1000 + (choice.cost.flat || 0));
+    };
+
     return h('div.modal', { role: 'dialog', 'aria-modal': 'true' },
       h('div.modal__panel.modal__panel--decision',
-        h('div.modal__eyebrow', t('decision.required', 'Decision required')),
+        h('div.modal__eyebrow',
+          t('decision.required', 'Decision required'),
+          target ? ` · ${target.flag} ${tNation(target)}` : '',
+        ),
         h('h2.modal__title', decision.title),
         h('p.modal__body', decision.prompt),
         h('div.choices',
-          decision.choices.map((choice) =>
-            h('button.choice', { onclick: () => { this.decisionChoice = choice.id; this.render(); } },
+          decision.choices.map((choice) => {
+            const price = priceOf(choice);
+            const affordable = price === null || price <= availableFunds(state);
+            return h('button.choice', {
+              class: affordable ? 'choice' : 'choice is-dear',
+              onclick: () => {
+                if (choice.confirm && !window.confirm(t('decision.confirm',
+                  '{label}. There is no version of this you can take back. Proceed?', { label: choice.label }))) return;
+                this.decisionChoice = choice.id;
+                this.render();
+              },
+            },
               h('div.choice__label', choice.label),
               h('div.choice__detail', choice.detail),
-              typeof choice.chance === 'number'
-                ? h('div.choice__odds', t('decision.odds', '{pct}% to land as intended', { pct: Math.round(choice.chance * 100) }))
-                : h('div.choice__odds', t('decision.certain', 'Certain outcome')),
-            ),
-          ),
+              h('div.choice__meta',
+                typeof choice.chance === 'number'
+                  ? h('span.choice__odds', { class: choice.chance >= 0.6 ? 'choice__odds is-good' : choice.chance >= 0.45 ? 'choice__odds' : 'choice__odds is-bad' },
+                      t('decision.odds', '{pct}% to land as intended', { pct: Math.round(choice.chance * 100) }))
+                  : h('span.choice__odds', t('decision.certain', 'Certain outcome')),
+                price !== null
+                  ? h('span.choice__cost', { class: affordable ? 'choice__cost' : 'choice__cost is-bad' }, money(price))
+                  : null,
+                choice.confirm
+                  ? h('span.choice__flag', t('decision.irreversible', 'irreversible'))
+                  : null,
+                ...Object.entries(choice.factions || {})
+                  .sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]))
+                  .slice(0, 2)
+                  .map(([id, delta]) =>
+                    h('span.choice__faction', { class: delta >= 0 ? 'choice__faction is-up' : 'choice__faction is-down' },
+                      `${delta >= 0 ? '▲' : '▼'} ${t(`factionShort.${id}`, SHORT_FACTION[id] || id)}`)),
+              ),
+            );
+          }),
         ),
         h('button.btn.btn--ghost.btn--block', {
+          title: t('decision.deferHint',
+            'Approval and unrest both move against you, and the initiative passes to whoever else wanted it.'),
           onclick: () => { this.decisionChoice = '__defer__'; this.render(); },
         }, t('decision.defer', 'Take no decision (accept the consequences)')),
       ),
@@ -2031,7 +2135,7 @@ export class GameScreen {
         h('div.help__section',
           h('h3', t('help.loop', 'The loop')),
           h('p', { html: t('help.loopBody',
-            'Each turn is one quarter — three months. You queue up to four orders, then press <b>End quarter</b>. Everyone else moves, the world throws events at you, and you get a briefing.') }),
+            'Each turn is one quarter — three months. You queue orders — as many as your <b>leadership</b> is worth, shown on the dashboard — then press <b>End quarter</b>. Everyone else moves, the world throws events at you, and you get a briefing.') }),
         ),
         h('div.help__section',
           h('h3', t('help.budgets', 'Your two budgets')),

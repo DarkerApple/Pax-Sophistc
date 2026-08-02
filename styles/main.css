@@ -1566,3 +1566,92 @@ kbd {
 }
 .sortbar__btn:hover { color: var(--ink); }
 .sortbar__btn.is-active { color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); }
+
+/* ── Leadership: what the office can actually carry ───────────────────────── */
+
+.leadership { background: var(--bg-2); border-radius: var(--radius-sm); padding: 0.5rem 0.6rem; margin-bottom: 0.7rem; }
+.leadership__head { display: flex; justify-content: space-between; align-items: baseline; gap: 0.5rem; }
+.leadership__label { font-size: 0.66rem; letter-spacing: 0.09em; text-transform: uppercase; color: var(--muted-2); }
+.leadership__slots { font-family: var(--mono); font-size: 0.8rem; font-weight: 600; color: var(--accent); }
+.leadership__band { display: flex; justify-content: space-between; font-size: 0.74rem; color: var(--muted); margin-top: 0.15rem; }
+.leadership__value { font-family: var(--mono); }
+.leadership__parts { display: flex; flex-wrap: wrap; gap: 0.2rem; margin-top: 0.35rem; }
+.leadership__part {
+  font-size: 0.64rem; font-family: var(--mono); color: var(--muted-2);
+  border: 1px solid var(--line); border-radius: 999px; padding: 0 0.35rem;
+}
+.leadership__part.is-up { border-color: color-mix(in srgb, var(--good) 40%, var(--line)); }
+.leadership__part.is-down { border-color: color-mix(in srgb, var(--warn) 40%, var(--line)); }
+.leadership__next { font-size: 0.68rem; color: var(--muted-2); margin-top: 0.3rem; }
+
+/* Decision choices: the cost, the odds, and who at home wants it. */
+.choice__meta { display: flex; flex-wrap: wrap; gap: 0.3rem; align-items: baseline; margin-top: 0.3rem; }
+.choice__odds { font-size: 0.72rem; font-family: var(--mono); color: var(--muted-2); }
+.choice__odds.is-good { color: var(--good); }
+.choice__odds.is-bad { color: var(--warn); }
+.choice__cost { font-size: 0.72rem; font-family: var(--mono); color: var(--muted); }
+.choice__cost.is-bad { color: var(--bad); }
+.choice__flag {
+  font-size: 0.64rem; letter-spacing: 0.06em; text-transform: uppercase;
+  color: var(--bad); border: 1px solid var(--bad); border-radius: 999px; padding: 0 0.35rem;
+}
+.choice__faction { font-size: 0.66rem; font-family: var(--mono); border: 1px solid var(--line); border-radius: 999px; padding: 0 0.35rem; }
+.choice__faction.is-up { color: var(--good); border-color: color-mix(in srgb, var(--good) 45%, var(--line)); }
+.choice__faction.is-down { color: var(--bad); border-color: color-mix(in srgb, var(--bad) 45%, var(--line)); }
+.choice.is-dear { opacity: 0.75; }
+
+/* ── Choosing a country ───────────────────────────────────────────────────── */
+
+.suggested { margin-bottom: 0.75rem; }
+.suggested__label { font-size: 0.66rem; letter-spacing: 0.09em; text-transform: uppercase; color: var(--muted-2); margin-bottom: 0.3rem; }
+.suggested__row { display: flex; flex-wrap: wrap; gap: 0.35rem; }
+.suggested__pick {
+  display: inline-flex; align-items: center; gap: 0.35rem; cursor: pointer;
+  background: var(--panel-2); border: 1px solid var(--line); border-radius: 999px;
+  padding: 0.22rem 0.7rem; font-size: 0.82rem; color: var(--ink);
+}
+.suggested__pick:hover { border-color: var(--accent); }
+.suggested__pick.is-active { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); }
+.suggested__flag { font-size: 1rem; }
+
+.filters__sortLabel { font-size: 0.66rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted-2); align-self: center; margin-right: 0.2rem; }
+.chip--sm { font-size: 0.74rem; padding: 0.15rem 0.5rem; }
+
+.country__ease { font-weight: 600; }
+.country__ease.is-gentle { color: var(--good); }
+.country__ease.is-steady { color: var(--ok); }
+.country__ease.is-demanding { color: var(--warn); }
+.country__ease.is-hard, .country__ease.is-brutal { color: var(--bad); }
+.country__why { display: flex; flex-wrap: wrap; gap: 0.2rem; margin: 0.25rem 0; }
+.country__reason {
+  font-size: 0.64rem; color: var(--muted-2);
+  border: 1px solid var(--line); border-radius: 999px; padding: 0 0.35rem;
+}
+
+/* ── Inventing one ────────────────────────────────────────────────────────── */
+
+.own__row { display: grid; grid-template-columns: 1fr 1fr; gap: 0.6rem; margin-bottom: 0.6rem; }
+.field { display: flex; flex-direction: column; gap: 0.2rem; min-width: 0; }
+.field--narrow { max-width: 6rem; }
+.field__label { font-size: 0.66rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted-2); }
+.own__shapes { display: grid; grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr)); gap: 0.5rem; margin: 0.35rem 0 0.7rem; }
+.own__shape {
+  text-align: left; background: var(--bg-2); border: 1px solid var(--line);
+  border-radius: var(--radius-sm); padding: 0.55rem 0.65rem; cursor: pointer; color: var(--ink);
+}
+.own__shape:hover { border-color: var(--accent); }
+.own__shape.is-active { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.own__shapeName { font-weight: 600; font-size: 0.85rem; }
+.own__shapeBlurb { font-size: 0.74rem; color: var(--muted); margin: 0.2rem 0; }
+.own__shapeStats { font-family: var(--mono); font-size: 0.68rem; color: var(--muted-2); }
+.own__shapeEase { font-size: 0.66rem; margin-top: 0.2rem; }
+.own__shapeEase.is-gentle { color: var(--good); }
+.own__shapeEase.is-steady { color: var(--ok); }
+.own__shapeEase.is-demanding { color: var(--warn); }
+.own__shapeEase.is-hard, .own__shapeEase.is-brutal { color: var(--bad); }
+
+@media (max-width: 700px) {
+  .own__row { grid-template-columns: 1fr; }
+  .field--narrow { max-width: none; }
+  .own__shapes { grid-template-columns: 1fr; }
+}
