@@ -80,6 +80,7 @@ import { leverage, tiesReport } from '../engine/dependency.js';
 import { exchangeReport } from '../engine/exchanges.js';
 import { brinkOfGeneralWar, worldWarReport } from '../engine/worldwar.js';
 import { reachDetail, theatreOf, theatreWeight } from '../engine/reach.js';
+import { canRally, rallyCandidates, rallyOdds } from '../engine/rally.js';
 import { formalName } from '../engine/warnames.js';
 import { MAP_FOCUSES, VIEW_MODES, WorldMap, alignmentOf, legendFor } from './map.js';
 import { KEY_GROUPS, groupLabel, keyLabel, keybindsIn } from './keys.js';
@@ -250,6 +251,12 @@ export class GameScreen {
     this.showTerritory = true;
     this.hoverId = null;
     this.pinnedId = null;
+    // The country menu: which country, and where on screen to put it. Opened by
+    // right-clicking or long-pressing a country on the map, or from the button
+    // on the inspector card, so orders can be given from where you are looking
+    // rather than only from the shelf on the right.
+    this.menuFor = null;
+    this.menuAt = { x: 0, y: 0 };
     this.helpOpen = false;
     // Which face of the world panel is showing, and which league table.
     this.worldTab = 'alignments';
@@ -310,6 +317,7 @@ export class GameScreen {
         ),
         this.#actionBar(),
       ),
+      this.menuFor ? this.#countryMenu() : null,
       this.detailNationId ? this.#nationDetail() : null,
       this.amendOpen ? this.#amendModal() : null,
       this.congressOpen ? this.#congressModal() : null,
@@ -329,6 +337,7 @@ export class GameScreen {
       this.map = new WorldMap(holder, {
         onSelect: (id) => this.#onMapSelect(id),
         onHover: (id) => this.#onMapHover(id),
+        onMenu: (id, x, y) => this.#openMenu(id, x, y),
         onViewChange: () => this.#syncZoomLabel(),
       });
       this.map.mode = this.mapMode;
@@ -695,8 +704,18 @@ export class GameScreen {
         row(t('stat.alignment', 'Alignment'),
           alignmentOf(id, game) ? t(alignmentOf(id, game).labelKey, alignmentOf(id, game).name) : t('legend.nonAligned', 'Non-aligned')),
       ),
+      // The three orders that make most sense against whoever you are looking
+      // at, one tap from the desk. The inspector was a reference card; this is
+      // what turns it into somewhere you act.
+      isPlayer ? null : this.#inspectorOrders(id),
       h('div.inspector__actions',
         h('button.btn.btn--sm.btn--ghost', { onclick: () => { this.map?.centreOn(id, Math.max(3, this.map.zoom)); } }, t('inspector.zoomTo', 'Zoom to')),
+        isPlayer ? null : h('button.btn.btn--sm.btn--ghost', {
+          onclick: (e) => {
+            const box = e.currentTarget.getBoundingClientRect();
+            this.#openMenu(id, box.left, box.bottom + 6);
+          },
+        }, t('inspector.moreOrders', 'All orders…')),
         isPlayer ? null : h('button.btn.btn--sm', { onclick: () => this.#openDetail(id) }, t('inspector.openFile', 'Open full file')),
       ),
     );
@@ -1385,6 +1404,10 @@ export class GameScreen {
           )
         : null,
 
+      // Who is not in your war but might be talked into it. Obligation is one
+      // list; persuasion is a different and much longer one.
+      this.#rallyPanel(),
+
       report.lapsed.length
         ? h('div',
             h('h3.subhead', t('treaty.lapsedHead', 'Paper that is no longer paper')),
@@ -1400,6 +1423,56 @@ export class GameScreen {
             ),
           )
         : null,
+    );
+  }
+
+  /**
+   * The capitals that owe you nothing and might come anyway.
+   *
+   * Treaties tell you who is obliged. This is the other half of a wartime
+   * foreign ministry's job: the countries with no paper, ranked by how likely
+   * they are to take the call, with the reason on each line.
+   */
+  #rallyPanel() {
+    const game = this.game;
+    const mine = game.wars.find(
+      (w) => w.active && (w.attackers.includes(game.playerId) || w.defenders.includes(game.playerId)),
+    );
+    if (!mine) return null;
+    const candidates = rallyCandidates(game, game.playerId, mine, 6);
+    if (!candidates.length) return null;
+    const action = ACTIONS_BY_ID_UI['rally-one'];
+
+    return h('div',
+      h('h3.subhead', t('rally.head', 'Who might come if you asked')),
+      h('p.panel__note', t('rally.note',
+        'Nobody here is obliged to you. What moves them is a border with the enemy, a quarrel of their own, a market they need — and whether you look like winning.')),
+      h('div.rallypanel',
+        candidates.map((entry) => h('div.rallycand',
+          h('button.rallycand__who', {
+            onclick: () => this.#openDetail(entry.id),
+            onpointerenter: () => this.#onMapHover(entry.id),
+            onpointerleave: () => this.#onMapHover(null),
+          },
+            h('span', entry.def?.flag || '·'),
+            h('span', tNation(entry.def)),
+          ),
+          h('span.rallycand__track',
+            h('span.rallycand__fill', { style: { width: `${Math.round(entry.chance * 100)}%` } })),
+          h('span.rallycand__odds', `${Math.round(entry.chance * 100)}%`),
+          h('span.rallycand__why',
+            entry.for.length
+              ? t(`rallyWhy.${entry.for[0].id}`, entry.for[0].label)
+              : entry.against.length
+                ? t(`rallyWhy.${entry.against[0].id}`, entry.against[0].label)
+                : ''),
+          h('button.btn.btn--tiny', {
+            disabled: !action || !actionAvailability(game, action, entry.id).ok
+              || !canQueue(game, this.orders, action, entry.id).ok,
+            onclick: () => this.#queueAction(action, entry.id),
+          }, t('rally.ask', 'Ask')),
+        )),
+      ),
     );
   }
 
@@ -1909,15 +1982,22 @@ export class GameScreen {
             this.orders.map((order, i) =>
               h('div.queue__item',
                 h('div',
-                  h('div.queue__name', order.name),
+                  // The queue showed the raw catalogue name, so a Korean run
+                  // read its own desk in English.
+                  h('div.queue__name', tActionName(order.name, order.actionId)),
                   h('div.queue__meta',
-                    order.targetId ? `${NATIONS_BY_ID[order.targetId].flag} ${NATIONS_BY_ID[order.targetId].name} · ` : '',
-                    `${money(order.cost)} · ${order.pc} PC · ${Math.round(order.chance * 100)}% likely`,
+                    order.targetId
+                      ? `${defOf(game, order.targetId)?.flag || ''} ${tNation(defOf(game, order.targetId))} · `
+                      : '',
+                    t('orders.queueMeta', '{cost} · {pc} PC · {pct}% likely', {
+                      cost: money(order.cost), pc: order.pc, pct: Math.round(order.chance * 100),
+                    }),
                   ),
                 ),
                 h('button.btn.btn--tiny.btn--danger', {
                   onclick: () => { this.orders.splice(i, 1); this.render(); },
-                  'aria-label': `Remove ${order.name}`,
+                  'aria-label': t('orders.removeQueued', 'Remove {action}',
+                    { action: tActionName(order.name, order.actionId) }),
                 }, '✕'),
               ),
             ),
@@ -2087,6 +2167,45 @@ export class GameScreen {
     });
     this.pendingTargetAction = null;
     this.render();
+  }
+
+  /** The three aptest orders against this country, as tappable chips. */
+  #inspectorOrders(id) {
+    const game = this.game;
+    const war = canRally(game, id);
+    // rankShelf pads to a minimum of eight so no tab ever looks empty; three
+    // chips is the point here, so the slice is not optional.
+    const orders = targetedActionsFor(game, id, war ? 2 : 3).slice(0, war ? 2 : 3);
+    if (!orders.length && !war) return null;
+    const mods = gameModifiers(game);
+    const state = game.nations[game.playerId];
+
+    return h('div.quickorders',
+      war
+        ? h('button.quickorder.quickorder--rally', {
+            title: t('menu.rallyHint',
+              'They owe you nothing. That is what makes the case worth making properly.'),
+            onclick: () => this.#queueAction(ACTIONS_BY_ID_UI['rally-one'], id),
+          },
+            h('span.quickorder__name', t('inspector.rally', 'Ask into the war')),
+            h('span.quickorder__odds', `${Math.round(rallyOdds(game, game.playerId, id, war).chance * 100)}%`),
+          )
+        : null,
+      orders.map((action) => {
+        const blocked = !canQueue(game, this.orders, action, id).ok
+          || !actionAvailability(game, action, id).ok;
+        return h('button.quickorder', {
+          class: blocked ? 'quickorder is-blocked' : 'quickorder',
+          disabled: blocked,
+          title: `${tAction(action, 'blurb')} — ${money(actionCost(action, state))}, ${action.pc} PC`,
+          onclick: () => this.#queueAction(action, id),
+        },
+          h('span.quickorder__name', tAction(action)),
+          h('span.quickorder__odds',
+            `${Math.round(successChance(game, action, game.playerId, id, mods) * 100)}%`),
+        );
+      }),
+    );
   }
 
   #onMapHover(id) {
@@ -2353,6 +2472,8 @@ export class GameScreen {
             'The percentage on each card is its chance of succeeding, based on your actual stats. Orders marked <b>suggested</b> address a problem you currently have; ones marked <b>can backfire</b> can end up worse than doing nothing.') }),
           h('p', t('help.targets',
             'Orders that need a target say so — click the card, then click a country on the map.')),
+          h('p', { html: t('help.fromTheMap',
+            'Or go the other way round: <b>right-click any country</b> — hold a finger on a phone, or press <b>O</b> on whoever the inspector is describing — and the orders that make sense against that country are right there, priced, with the odds. The country card carries the three aptest as chips, and a country\u2019s full file lists ten.') }),
         ),
         h('div.help__section',
           h('h3', t('help.escalation', 'Escalation')),
@@ -2362,7 +2483,7 @@ export class GameScreen {
         h('div.help__section',
           h('h3', t('help.mapTitle', 'The map')),
           h('p', t('help.mapBody',
-            'Scroll or pinch to zoom, drag to pan. The buttons above it recolour the world by relations, power, stability, alignment or conflict. Hover any country to fill the inspector on the left; click to pin it, click again for its full file.')),
+            'Scroll or pinch to zoom, drag to pan. The buttons above it recolour the world by relations, power, stability, alignment or conflict. Hover any country to fill the inspector on the left; click to pin it, click again for its full file, and right-click or hold for the orders you can give against it.')),
         ),
         h('div.help__section',
           h('h3', t('help.winning', 'Winning')),
@@ -2402,7 +2523,169 @@ export class GameScreen {
 
   #openDetail(id) {
     this.detailNationId = id;
+    this.menuFor = null;
     this.render();
+  }
+
+  // ── Giving orders from the map ───────────────────────────────────────────
+
+  /**
+   * The country menu.
+   *
+   * Every order in this game was issued from one shelf on the right-hand side:
+   * you found the order, then you were told to go and click a country. The
+   * whole middle of the screen — a map of everybody, a card for whoever you are
+   * looking at — was somewhere to read rather than somewhere to act. This
+   * inverts it. Right-click (or hold) any country and the orders that make
+   * sense against *that* country are under your cursor, priced, with the odds,
+   * one click from the desk.
+   */
+  /** The keyboard route in, since #openMenu is private to the class. */
+  openCountryMenu(id, x, y) {
+    this.#openMenu(id, x, y);
+  }
+
+  #openMenu(id, x, y) {
+    if (!id || !this.game?.nations[id]) return;
+    if (id === this.game.playerId) {
+      // Your own country has no targeted orders, but the file is still useful.
+      this.#openDetail(id);
+      return;
+    }
+    // If an order is waiting for a target, a click on a country means that,
+    // not "show me a menu".
+    if (this.pendingTargetAction) {
+      this.#queueAction(this.pendingTargetAction, id);
+      return;
+    }
+    this.menuFor = id;
+    this.menuAt = { x, y };
+    this.#pin(id);
+    this.render();
+  }
+
+  #closeMenu() {
+    this.menuFor = null;
+    this.render();
+  }
+
+  #countryMenu() {
+    const game = this.game;
+    const id = this.menuFor;
+    const def = defOf(game, id);
+    if (!def) return null;
+    const relation = getRelation(game, game.playerId, id);
+    const war = canRally(game, id);
+    const orders = targetedActionsFor(game, id, 7).slice(0, 7);
+
+    // Keep it on screen. A menu opened near the right edge of a phone would
+    // otherwise hang half of itself off the side.
+    const width = 288;
+    const left = Math.max(8, Math.min(this.menuAt.x, (window.innerWidth || 1024) - width - 8));
+    const top = Math.max(8, Math.min(this.menuAt.y, (window.innerHeight || 768) - 380));
+
+    return h('div.menuveil', {
+      onclick: () => this.#closeMenu(),
+      oncontextmenu: (e) => { e.preventDefault(); this.#closeMenu(); },
+    },
+      h('div.countrymenu', {
+        style: { left: `${left}px`, top: `${top}px`, width: `${width}px` },
+        onclick: (e) => e.stopPropagation(),
+      },
+        h('div.countrymenu__head',
+          h('span.countrymenu__flag', def.flag),
+          h('div.countrymenu__who',
+            h('div.countrymenu__name', tNation(def)),
+            h('div.countrymenu__rel', { style: { color: relationColour(relation) } },
+              `${relationLabel(relation)} · ${Math.round(relation)}`),
+          ),
+          h('button.countrymenu__close', { onclick: () => this.#closeMenu(), 'aria-label': t('common.close', 'Close') }, '✕'),
+        ),
+
+        // The one order that is about them rather than aimed at them: come and
+        // fight with us. It sits at the top because when it is available it is
+        // almost always the most interesting thing on the menu.
+        war ? this.#rallyRow(id, war) : null,
+
+        orders.length
+          ? h('div.countrymenu__orders',
+              orders.map((action) => this.#menuOrder(action, id)))
+          : h('p.countrymenu__empty',
+              t('menu.nothing', 'Nothing on the table against them this quarter.')),
+
+        h('div.countrymenu__foot',
+          h('button.btn.btn--tiny.btn--ghost', {
+            onclick: () => { this.#closeMenu(); this.map?.centreOn(id, Math.max(3, this.map.zoom)); },
+          }, t('inspector.zoomTo', 'Zoom to')),
+          h('button.btn.btn--tiny', { onclick: () => this.#openDetail(id) },
+            t('inspector.openFile', 'Open full file')),
+        ),
+      ),
+    );
+  }
+
+  /**
+   * One order, as a row rather than a card: name, what it costs, what the odds
+   * are. Small enough that seven of them fit under a cursor and complete enough
+   * that nobody has to open the shelf to check.
+   */
+  #menuOrder(action, targetId) {
+    const game = this.game;
+    const state = game.nations[game.playerId];
+    const mods = gameModifiers(game);
+    const cost = actionCost(action, state);
+    const chance = successChance(game, action, game.playerId, targetId, mods);
+    const room = canQueue(game, this.orders, action, targetId);
+    const available = actionAvailability(game, action, targetId);
+    const blocked = !room.ok || !available.ok;
+
+    return h('button.menuorder', {
+      class: blocked ? 'menuorder is-blocked' : 'menuorder',
+      disabled: blocked,
+      title: blocked ? (room.reason || available.reason) : tAction(action, 'blurb'),
+      // Queueing from inside the country file leaves the file open, so several
+      // orders can go on the desk against the same country without reopening it.
+      onclick: () => { this.menuFor = null; this.#queueAction(action, targetId); },
+    },
+      h('span.menuorder__name', tAction(action)),
+      h('span.menuorder__meta',
+        h('span.menuorder__cost', money(cost)),
+        h('span.menuorder__pc', `${action.pc}PC`),
+        h('span.menuorder__odds', { class: chance >= 0.6 ? 'menuorder__odds is-good' : chance >= 0.4 ? 'menuorder__odds' : 'menuorder__odds is-bad' },
+          `${Math.round(chance * 100)}%`),
+      ),
+      action.declaresWar ? h('span.menuorder__flag', t('orders.startsWar', 'starts a war')) : null,
+      action.rally ? h('span.menuorder__flag', t('menu.rallyTag', 'asks them into your war')) : null,
+    );
+  }
+
+  /** Come and fight with us — with the two reasons they might, and might not. */
+  #rallyRow(id, war) {
+    const game = this.game;
+    const odds = rallyOdds(game, game.playerId, id, war);
+    const action = ACTIONS_BY_ID_UI['rally-one'];
+    const available = action ? actionAvailability(game, action, id) : { ok: false, reason: '' };
+    const room = action ? canQueue(game, this.orders, action, id) : { ok: false, reason: '' };
+    const blocked = !available.ok || !room.ok;
+
+    return h('div.rallyrow',
+      h('div.rallyrow__head',
+        h('span.rallyrow__title', t('menu.rallyHead', 'Ask them into {war}', { war: war.name })),
+        h('span.rallyrow__odds', { class: odds.chance >= 0.5 ? 'rallyrow__odds is-good' : odds.chance >= 0.25 ? 'rallyrow__odds' : 'rallyrow__odds is-bad' },
+          `${Math.round(odds.chance * 100)}%`),
+      ),
+      h('div.rallyrow__why',
+        odds.factors.slice(0, 3).map((f) =>
+          h('span.rallyrow__factor', { class: f.value > 0 ? 'rallyrow__factor is-for' : 'rallyrow__factor is-against' },
+            `${f.value > 0 ? '▲' : '▼'} ${t(`rallyWhy.${f.id}`, f.label)}`)),
+      ),
+      h('button.btn.btn--tiny.btn--block', {
+        disabled: blocked,
+        title: blocked ? (available.reason || room.reason) : t('menu.rallyHint',
+          'They owe you nothing. That is what makes the case worth making properly.'),
+        onclick: () => { this.menuFor = null; this.#queueAction(action, id); },
+      }, t('menu.rallyDo', 'Make the case')),
+    );
   }
 
   #nationDetail() {
@@ -2459,20 +2742,32 @@ export class GameScreen {
               h('h3.subhead', t('panel.inEffect', 'In effect')),
               state.modifiers.map((m) => h('div.modifier', h('span', tModifier(m.label)), h('span.modifier__turns', `${m.turnsLeft}q`))))
           : null,
-        isPlayer
-          ? null
-          : h('div.detail__actions',
-              h('h3.subhead', t('orders.orderAgainst', 'Order against this country')),
-              h('div.detail__buttons',
-                targetedActionsFor(game, id).map((a) =>
-                  h('button.btn.btn--ghost.btn--sm', {
-                    title: tAction(a, 'blurb'),
-                    onclick: () => { this.#closeDetail(); this.#queueAction(a, id); },
-                  }, tAction(a)),
-                ),
-              ),
-            ),
+        isPlayer ? null : this.#detailOrders(id),
       ),
+    );
+  }
+
+  /**
+   * What you can do about this country, from inside its own file.
+   *
+   * It used to be a row of identical ghost buttons with nothing on them but a
+   * name: no cost, no odds, no indication that one of them starts a war. These
+   * are the same rows the map menu uses, so the price of an order is the same
+   * wherever a player meets it.
+   */
+  #detailOrders(id) {
+    const game = this.game;
+    const war = canRally(game, id);
+    const orders = targetedActionsFor(game, id, 10);
+
+    return h('div.detail__section.detail__actions',
+      h('h3.subhead', t('orders.orderAgainst', 'What you can do about them')),
+      war ? this.#rallyRow(id, war) : null,
+      orders.length
+        ? h('div.countrymenu__orders', orders.map((action) => this.#menuOrder(action, id)))
+        : h('p.panel__note', t('menu.nothing', 'Nothing on the table against them this quarter.')),
+      h('p.panel__note', t('menu.mapHint',
+        'You can also right-click — or hold — any country on the map to get this list where your cursor already is.')),
     );
   }
 

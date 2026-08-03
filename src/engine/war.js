@@ -31,6 +31,7 @@ import { alliedAid, alliesOf, invoke, treatyBetween } from './treaties.js';
 import { nameWar } from './warnames.js';
 import { MIN_REACH, occupiersFor, reach, theatreOf, theatrePower, theatreWeight } from './reach.js';
 import { blocCall, mergeWars, tickWorldWar } from './worldwar.js';
+import { aiRally } from './rally.js';
 import { noteTradeBreak as severTiesNote, restoreTies, severTies } from './dependency.js';
 
 const HOME_GROUND_BONUS = 1.18;
@@ -238,6 +239,10 @@ export function tickWars(game, rng, mods) {
     // …and the organisations people belong to answer for their members, which
     // is the whole point of belonging to one.
     reports.push(...blocCall(game, war, rng));
+
+    // Governments other than yours also work the telephone.
+    const rallied = aiRally(game, war, rng, mods);
+    if (rallied) reports.push(rallied);
 
     // Once enough of the world is in, it stops being somebody's war.
     reports.push(...tickWorldWar(game, war, rng, mods));

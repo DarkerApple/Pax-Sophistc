@@ -21,6 +21,7 @@ export const KEYBINDS = [
   { id: 'territory', keys: ['T'], group: 'map', label: 'Show or hide filled territory' },
   { id: 'home', keys: ['G'], group: 'map', label: 'Centre the map on your country' },
   { id: 'pin', keys: ['P'], group: 'map', label: 'Pin or unpin the country you are inspecting' },
+  { id: 'countryMenu', keys: ['O'], group: 'map', label: 'Orders against the country you are inspecting' },
   { id: 'zoom', keys: ['+', '−', '0'], group: 'map', label: 'Zoom in, zoom out, reset' },
   { id: 'pan', keys: ['←', '↑', '→', '↓'], group: 'map', label: 'Pan the map' },
 

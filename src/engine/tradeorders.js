@@ -20,6 +20,7 @@ import { DEMANDS } from './exchanges.js';
 import { exposure, openShare } from './dependency.js';
 import { getRelation, isSovereign, livePower } from './state.js';
 import { reach, MIN_REACH } from './reach.js';
+import { canRally } from './rally.js';
 
 /** Defaults, so each order below is only what makes it different. */
 function tr(id, name, blurb, opts = {}) {
@@ -281,6 +282,41 @@ export const WAR_ENTRY_ORDERS = [
     effects: {
       success: { self: { approval: 4 }, worldTension: 8 },
       failure: { self: { influence: -5, approval: -4 }, worldTension: 4 },
+    },
+  },
+  {
+    id: 'rally-one',
+    name: 'Ask Them to Join the War',
+    category: 'alliances',
+    blurb: 'A direct call to one capital, made in person, with the whole case laid out. They owe you nothing, which is what makes it worth doing properly.',
+    cost: { pctGdp: 0.4 }, pc: 3, target: 'nation', baseSuccess: 0.95, risk: 'medium',
+    skills: [['influence', 0.14]],
+    situational: ['war', 'warLosing', 'occupied', 'warStalled', 'brink', 'casualties'],
+    rally: 'one',
+    available: (game) => game.wars.some(
+      (w) => w.active && (w.attackers.includes(game.playerId) || w.defenders.includes(game.playerId)),
+    ),
+    availableAgainst: (game, id) => Boolean(canRally(game, id)),
+    effects: {
+      success: { self: { influence: 1 }, worldTension: 3 },
+      failure: { self: { influence: -3, approval: -2 } },
+    },
+  },
+  {
+    id: 'rally-the-region',
+    name: 'Appeal to Every Capital That Will Listen',
+    category: 'alliances',
+    blurb: 'One appeal, broadcast, to everybody who has not committed. Easier to make than twelve telephone calls and much easier to refuse.',
+    cost: { pctGdp: 0.7 }, pc: 4, target: 'none', baseSuccess: 0.85, risk: 'medium',
+    skills: [['influence', 0.26]],
+    situational: ['warLosing', 'occupied', 'war', 'casualties', 'brink', 'warExhausted'],
+    rally: 'all',
+    available: (game) => game.wars.some(
+      (w) => w.active && (w.attackers.includes(game.playerId) || w.defenders.includes(game.playerId)),
+    ),
+    effects: {
+      success: { self: { influence: 2, approval: 2 }, worldTension: 6 },
+      failure: { self: { influence: -6, approval: -4 } },
     },
   },
   {

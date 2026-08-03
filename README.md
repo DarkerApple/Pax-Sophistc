@@ -10,7 +10,7 @@ writes the briefings and judges your freeform orders — and every provider it s
 
 ```bash
 npm start          # http://localhost:5173
-npm test           # 264 engine, orders, treaties, reach, ties, world wars, endgame and translation tests
+npm test           # 275 engine, orders, treaties, reach, ties, world wars, rallies and translation tests
 ```
 
 There is nothing to install. `npm start` runs a ~60-line static file server from
@@ -40,7 +40,7 @@ turn, the world throws events at you, wars grind forward, and the books get bala
   still allowed, and orders that contradict each other (two alignment changes, two treaty
   calls, two annexations) will not sit on the desk together.
 
-- **380 orders** across eleven tabs — Quick, Economy, Society, Domestic, Military,
+- **382 orders** across eleven tabs — Quick, Economy, Society, Domestic, Military,
   Diplomacy, Alliances, Ties, Intelligence, Technology and the War Room — from `Fiscal
   Stimulus` and `Semiconductor Self-Sufficiency` to `Close the Strait to Their Shipping`,
   `Enter the War on Their Side` and `Mount an Amphibious Landing`. Every shelf can be sorted by relevance, odds, cost, political capital or name.
@@ -220,6 +220,48 @@ given you basing rights** push the horizon back out.
   accounts.*
 - **Nobody annexes a country they could not have reached.** If the only winners are an
   ocean away, the state survives its own defeat.
+
+### Orders you give from the map
+
+The right-hand shelf was the only place an order could come from. You found the
+order, and then the game told you to go and click a country — so the map, and
+the country card next to it, were places to read rather than places to act.
+
+- **Right-click any country** — or hold a finger on it, or press `O` on whoever
+  the inspector is describing — and the seven orders that make most sense
+  against *that* country are under your cursor, each with what it costs, what it
+  needs in political capital, and the odds. One click puts it on the desk.
+- **The inspector carries the three aptest of them as chips**, so the card you
+  are already looking at is one tap from an order.
+- **The country file lists ten**, as the same priced rows rather than the wall of
+  identical ghost buttons it used to be — and stays open while you queue several
+  against the same country.
+
+### Asking people who owe you nothing
+
+There were three ways to end up in a war: start one, have signed something, or
+be dragged in by the balance of power. All three happen *to* you. The thing a
+government at war actually spends its days doing — telephoning the capitals that
+have not committed and making the case — was not in the game.
+
+- **Ask them into the war.** A direct call to one country with no obligation to
+  you. The odds are built from fifteen named factors and the three that matter
+  most are on the card: whether they share a border with the enemy, their own
+  quarrel with it, how frightening it has become, how much they need your
+  market, whether they could physically get to the theatre, and whether you look
+  like winning. People join wars they think are going to be won.
+- **It is much harder if you started it.** An aggressor's appeal is discounted
+  outright, which is most of the difference between a defensive war and a war of
+  choice.
+- **A refusal is a public fact.** It costs you a little standing and a little
+  warmth, and that capital will not take the call again for four quarters — so
+  calling everybody at once is not obviously right.
+- **Or appeal to everyone.** One broadcast appeal to every capital that will
+  listen: cheaper than twelve telephone calls, easier to refuse, and it never
+  brings more than three.
+- **The world panel ranks who would come**, with the reason on each line and an
+  Ask button beside it. And **the AI works the telephone too** — a government
+  losing badly makes its own calls.
 
 ### Ally wars, and the war that becomes everybody's
 
@@ -620,7 +662,7 @@ without being documented and cannot be documented without existing.
 
 The whole interface ships in **English and Korean**, switchable from **the header on the
 setup screen and the top bar in game** — one click, no menus — and remembered between runs. That covers the chrome, all 56 country names and one-line briefs,
-all 380 order names and descriptions, the world modes, difficulty tiers, themes, help,
+all 382 order names and descriptions, the world modes, difficulty tiers, themes, help,
 events, decisions, escalation and war text — and the locally generated quarterly briefing,
 which is composed from translated fragments rather than translated after the fact.
 
@@ -728,6 +770,7 @@ src/
     reach.js          who can actually get there, and who therefore takes ground
     dependency.js     the second map: who needs whom, and what closing it costs
     worldwar.js       bloc calls, wars that merge, and the war that goes general
+    rally.js          asking capitals that owe you nothing to come anyway
     exchanges.js      demands and offers other governments answer
     factions.js       the four creditors of political capital
     nemesis.js        the rivalry, and the file behind it
@@ -780,9 +823,9 @@ src/
     setup.js          new-game screen
     game.js           command screen: dashboard, inspector, feed, planner
     dom.js, store.js  helpers and persistence
-tests/                engine, orders, treaties, reach, ties, world wars, politics,
-                      endgame, desk, territory, coalitions, worldview, AI-boundary,
-                      world and translation tests
+tests/                engine, orders, treaties, reach, ties, world wars, rallies,
+                      politics, endgame, desk, territory, coalitions, worldview,
+                      AI-boundary, world and translation tests
 ```
 
 The simulation (`src/engine/`, `src/data/`) has no DOM dependency and runs under plain Node,

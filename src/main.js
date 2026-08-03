@@ -442,6 +442,7 @@ document.addEventListener('keydown', (e) => {
 
   if (e.key === 'Escape') {
     if (app.settingsOpen) app.closeSettings();
+    else if (screen?.menuFor) { screen.menuFor = null; screen.render(); }
     else if (screen?.helpOpen) { screen.helpOpen = false; screen.render(); }
     else if (screen?.detailNationId) { screen.detailNationId = null; screen.render(); }
     else if (screen?.pendingTargetAction) { screen.pendingTargetAction = null; screen.render(); }
@@ -529,6 +530,17 @@ document.addEventListener('keydown', (e) => {
     screen.pinnedId = screen.pinnedId ? null : target;
     screen.map?.setSelected(screen.pinnedId);
     screen.render();
+    e.preventDefault();
+    return;
+  }
+  // The country menu, from the keyboard: whatever the inspector is describing.
+  // Anchored to the middle of the window rather than to a cursor, because there
+  // isn't one.
+  if (key === 'o') {
+    const target = screen.pinnedId || screen.hoverId;
+    if (target && target !== app.game.playerId) {
+      screen.openCountryMenu(target, window.innerWidth / 2 - 144, window.innerHeight / 4);
+    }
     e.preventDefault();
     return;
   }

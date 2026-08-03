@@ -99,13 +99,17 @@ export function alignmentOf(nationId, game = null) {
 export class WorldMap {
   /**
    * @param {HTMLElement} container
-   * @param {{onSelect?: Function, onHover?: Function, onViewChange?: Function}} handlers
+   * @param {{onSelect?: Function, onHover?: Function, onViewChange?: Function,
+   *           onMenu?: Function}} handlers
    */
-  constructor(container, { onSelect, onHover, onViewChange } = {}) {
+  constructor(container, { onSelect, onHover, onViewChange, onMenu } = {}) {
     this.container = container;
     this.onSelect = onSelect;
     this.onHover = onHover;
     this.onViewChange = onViewChange;
+    // Right-click, or a held touch: the map becomes somewhere you give orders
+    // from rather than somewhere you look things up.
+    this.onMenu = onMenu;
     this.selectedId = null;
     this.mode = 'relations';
     this.camera = { zoom: 1, x: 0, y: 0 };
@@ -308,6 +312,7 @@ export class WorldMap {
         e.stopPropagation();
         this.onSelect?.(ownerId);
       });
+      this.#wireMenu(path, ownerId);
       this.territoryEls.set(ownerId, path);
       g.append(path);
     }
@@ -491,8 +496,52 @@ export class WorldMap {
     g.addEventListener('focus', () => this.onHover?.(id));
     g.addEventListener('pointerleave', () => this.onHover?.(null));
     g.addEventListener('blur', () => this.onHover?.(null));
+    this.#wireMenu(g, id);
 
     return g;
+  }
+
+  /**
+   * Open the country's order menu: right-click on a desktop, a held finger on a
+   * phone, and the context-menu key for anybody driving from the keyboard.
+   *
+   * The long-press is the fiddly half. A touch that moves is a pan and a touch
+   * that lifts early is a tap, so the timer is cancelled by either — otherwise
+   * every drag across the Atlantic would end in a menu.
+   */
+  #wireMenu(el, id) {
+    el.addEventListener('contextmenu', (e) => {
+      if (!this.onMenu) return;
+      e.preventDefault();
+      e.stopPropagation();
+      this.onMenu(id, e.clientX, e.clientY);
+    });
+
+    let hold = null;
+    let origin = null;
+    const cancel = () => {
+      if (hold) clearTimeout(hold);
+      hold = null;
+      origin = null;
+    };
+    el.addEventListener('pointerdown', (e) => {
+      if (e.pointerType !== 'touch' || !this.onMenu) return;
+      origin = { x: e.clientX, y: e.clientY };
+      hold = setTimeout(() => {
+        hold = null;
+        // Suppress the click that would otherwise follow the release.
+        this.justPanned = true;
+        setTimeout(() => { this.justPanned = false; }, 300);
+        this.onMenu(id, origin.x, origin.y);
+      }, 480);
+    });
+    el.addEventListener('pointermove', (e) => {
+      if (!origin) return;
+      if (Math.abs(e.clientX - origin.x) + Math.abs(e.clientY - origin.y) > 8) cancel();
+    });
+    el.addEventListener('pointerup', cancel);
+    el.addEventListener('pointercancel', cancel);
+    el.addEventListener('pointerleave', cancel);
   }
 
   #label(game, id, dataset) {

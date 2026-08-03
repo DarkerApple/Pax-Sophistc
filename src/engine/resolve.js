@@ -4,7 +4,7 @@
 import { NATIONS_BY_ID } from '../data/nations.js';
 import { ACTIONS_BY_ID, actionCost } from './actions.js';
 import { applyEffect, describeChanges, scaleEffect } from './effects.js';
-import { adjustRelation, clamp, getRelation, logEvent } from './state.js';
+import { adjustRelation, clamp, defOf, getRelation, logEvent } from './state.js';
 import { annexOccupied, concludeWar, declareWar, findWar, pressWar } from './war.js';
 import { realign } from './statecraft.js';
 import { chargeExit, noteAccession, open as openCommitment } from './commitments.js';
@@ -14,6 +14,7 @@ import { leverage, noteTradeBreak, restoreTies, severTies } from './dependency.j
 import { DEMANDS, send as sendDemand, settleCounter } from './exchanges.js';
 import { blocCall } from './worldwar.js';
 import { reach } from './reach.js';
+import { canRally, rally, rallyAll, ralliableWars } from './rally.js';
 import {
   TREATY_KINDS,
   abrogate as abrogateTreaty,
@@ -405,6 +406,31 @@ export function resolveAction(game, rng, mods, order, actorId = game.playerId) {
       );
     } else {
       outcome.notes.push('That war ended before the order left the building.');
+    }
+  }
+
+  // Asking somebody who owes you nothing. The order succeeds at *making the
+  // call*; whether the call is answered is decided by rally.js, in front of the
+  // player, with every factor named.
+  if (action.rally && succeeded) {
+    const war = (targetId && canRally(game, targetId, actorId))
+      || ralliableWars(game, actorId)[0];
+    if (!war) {
+      outcome.notes.push('There is no war to call anybody into.');
+    } else if (action.rally === 'one' && targetId) {
+      const answer = rally(game, actorId, targetId, war, rng);
+      outcome.rally = answer;
+      outcome.warId = war.id;
+      outcome.notes.push(answer?.joined
+        ? `${defOf(game, targetId)?.name || targetId} is a belligerent as of this quarter. You put it at about ${Math.round((answer.chance || 0) * 100)}%.`
+        : `They declined. You put it at about ${Math.round((answer?.chance || 0) * 100)}%, and everybody watching now knows the answer.`);
+    } else {
+      const answer = rallyAll(game, actorId, war, rng);
+      outcome.rally = answer;
+      outcome.warId = war.id;
+      outcome.notes.push(answer.joined.length
+        ? `${answer.joined.length} of ${answer.joined.length + answer.refused.length} capitals answered.`
+        : 'The appeal went out to every capital that would take the call and none of them took it further than a statement.');
     }
   }
 
