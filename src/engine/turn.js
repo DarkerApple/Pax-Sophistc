@@ -20,6 +20,7 @@ import { liveObjectives, meets, reviewDue, reviewMandate } from './mandate.js';
 import { tickCommitments } from './commitments.js';
 import { alliedAid, tickTreaties } from './treaties.js';
 import { tickTrade, tradeDrag, tradeHealth } from './dependency.js';
+import { arsenalReport, depletion, produce } from './arsenal.js';
 import { resolveExchanges } from './exchanges.js';
 import { brinkOfGeneralWar, worldWarReport } from './worldwar.js';
 import { congressDue, congressOutcome, convene, resolveCongress } from './congress.js';
@@ -28,6 +29,7 @@ import { electionState } from './lifecycle.js';
 import {
   QUARTERS,
   activeWarsFor,
+  addModifier,
   adjustRelation,
   clamp,
   dateLabel,
@@ -184,6 +186,9 @@ export function advanceTurn(game, { orders = [], decisionChoice = null } = {}) {
     report.worldWar = worldWarReport(game);
     report.brink = brinkOfGeneralWar(game);
     report.tradeHealth = Number(tradeHealth(game, game.playerId).toFixed(2));
+    // What is left in the depots, which is the number a wartime briefing is
+    // actually about by the fourth quarter.
+    report.arsenal = { depletion: Number(depletion(game, game.playerId).toFixed(2)) };
 
     // 8. The rivalry, the fog, and the four creditors of political capital.
     noteQuarter(game, report);
@@ -315,6 +320,12 @@ function economyTick(game, rng, mods) {
       summary.commitmentsFinished = committed.finished.map((c) => c.label);
     }
 
+    // Industry replaces what the war ate. A country on a war footing builds
+    // faster and can build past its peacetime establishment; everybody else
+    // tops up toward theirs and no further.
+    const footing = state.modifiers.some((m) => /war|mobilis/i.test(m.label || '')) ? 1.8 : 1;
+    produce(game, state.id, { footing });
+
     // Deficits are financed, not magicked away.
     const debtReport = serviceDebt(game, state, rng, mods);
     if (isPlayer && debtReport) summary.debt = debtReport;
@@ -325,9 +336,26 @@ function economyTick(game, rng, mods) {
     // drags that baseline down — which is how a state actually fails, rather
     // than being rescued by its own equilibrium every quarter.
     const def = defOf(game, state.id);
-    const equilibrium = def.stability - Math.max(0, state.unrest - 40) * 0.85;
-    state.stability = clamp(state.stability + (equilibrium - state.stability) * 0.085);
-    state.unrest = clamp(state.unrest + (state.unrest > def.unrest ? -0.8 : 0.35));
+    // Unrest drags the structural baseline down — that is how a state actually
+    // fails rather than being rescued by its own equilibrium every quarter —
+    // but it does not drag it to nothing. Institutions, armies and habits
+    // survive governments, and a floor here is the difference between a hard
+    // run and an unrecoverable one.
+    const equilibrium = Math.max(20, def.stability - Math.max(0, state.unrest - 45) * 0.5);
+    // A state that has fallen well below its own baseline pulls back toward it
+    // faster than one drifting near it: institutions under real strain get
+    // attention, budgets and people that a comfortable one does not.
+    const pull = state.stability < equilibrium - 12 ? 0.14 : 0.085;
+    state.stability = clamp(state.stability + (equilibrium - state.stability) * pull);
+    // Unrest reverts toward the country's own structural level, and it reverts
+    // *proportionally* — a flat point a quarter is nothing at ninety and the
+    // whole story at five, so every country ratcheted itself to a hundred given
+    // enough quarters and then stayed there. Anger at ninety in a country whose
+    // normal is sixty is a spike, and spikes subside.
+    const restive = state.unrest > def.unrest;
+    state.unrest = clamp(
+      state.unrest + (def.unrest - state.unrest) * (restive ? 0.11 : 0.05),
+    );
     state.readiness = clamp(state.readiness + (state.readiness < 70 ? 0.6 : -0.2));
     state.approval = clamp(state.approval + (50 - state.approval) * 0.06);
     state.population = state.population * (1 + (def.growth > 1 ? 0.0018 : 0.0003));
@@ -480,7 +508,45 @@ function checkEndgame(game, mods) {
     };
   }
 
-  if (player.stability <= 6 || (player.stability < 22 && player.unrest > 88)) {
+  // A government does not fall the first quarter its stability touches a
+  // threshold. It survives, badly, and everybody can see it is about to go —
+  // which is the quarter you get to do something about it. Only a state that is
+  // still on the floor after two consecutive quarters actually falls.
+  const onTheFloor = player.stability <= 4 || (player.stability < 15 && player.unrest > 92);
+  if (onTheFloor) {
+    game.collapseWatch = (game.collapseWatch || 0) + 1;
+    // The first quarter on the floor is not the end. A state facing collapse
+    // reaches for emergency powers — a technocratic cabinet, the army in the
+    // streets, the constitution suspended for the duration — and that buys it
+    // one recovery. Once. After that there is nothing left to reach for.
+    if (game.collapseWatch === 1 && !game.emergencyUsed) {
+      game.emergencyUsed = game.term || 1;
+      player.stability = clamp(player.stability + 14);
+      player.unrest = clamp(player.unrest - 12);
+      player.approval = clamp(player.approval - 6);
+      addModifier(game, game.playerId, {
+        label: 'Emergency administration',
+        turns: 8,
+        stability: 0.8,
+        unrest: -0.7,
+        growth: -0.2,
+        source: 'emergency',
+      });
+      logEvent(game, {
+        type: 'domestic',
+        severity: 'critical',
+        text: `The ${def.adjective} state suspends normal government. An emergency administration takes office in ${dateLabel(game)}; it holds, for now, and everybody knows what the alternative was.`,
+        nations: [game.playerId],
+      });
+    }
+  } else if (game.collapseWatch) {
+    // Pulled back from it. The rally is real: a government that survives this
+    // has proved something, and gets a little of its authority back for it.
+    game.collapseWatch = 0;
+    player.stability = clamp(player.stability + 3);
+  }
+
+  if (game.collapseWatch >= 2) {
     return {
       status: 'defeat',
       kind: 'collapse',

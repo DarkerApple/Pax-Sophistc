@@ -81,6 +81,17 @@ import { exchangeReport } from '../engine/exchanges.js';
 import { brinkOfGeneralWar, worldWarReport } from '../engine/worldwar.js';
 import { reachDetail, theatreOf, theatreWeight } from '../engine/reach.js';
 import { canRally, rallyCandidates, rallyOdds } from '../engine/rally.js';
+import { ARMS, ARMS_BY_ID, arsenalReport, available, commitmentCost, defaultMix } from '../engine/arsenal.js';
+import {
+  TERRAIN,
+  deployed,
+  frontName,
+  frontReport,
+  frontsOf,
+  offensiveOdds,
+} from '../engine/fronts.js';
+
+import { OFFENSIVES } from '../engine/offensives.js';
 import { formalName } from '../engine/warnames.js';
 import { MAP_FOCUSES, VIEW_MODES, WorldMap, alignmentOf, legendFor } from './map.js';
 import { KEY_GROUPS, groupLabel, keyLabel, keybindsIn } from './keys.js';
@@ -99,6 +110,19 @@ const STAT_ROWS = [
   labelOf: () => t(`stat.${row.key}`, row.label),
   hintOf: () => t(`stat.${row.key}Hint`, row.hint),
 }));
+
+/** How a front reads, in words. */
+const FRONT_STATES = {
+  'breaking-through': 'breaking through',
+  advancing: 'advancing',
+  held: 'held',
+  'giving-ground': 'giving ground',
+  collapsing: 'collapsing',
+};
+
+function clampPct(value) {
+  return Math.max(2, Math.min(98, value));
+}
 
 /** Which way the commercial leverage runs, in words rather than a ratio. */
 const GRIP_WORDS = {
@@ -257,6 +281,9 @@ export class GameScreen {
     // rather than only from the shelf on the right.
     this.menuFor = null;
     this.menuAt = { x: 0, y: 0 };
+    // The offensive planner: which operation is being planned, on which front,
+    // and with what. Null when it is closed, which is most of the time.
+    this.plan = null;
     this.helpOpen = false;
     // Which face of the world panel is showing, and which league table.
     this.worldTab = 'alignments';
@@ -318,6 +345,7 @@ export class GameScreen {
         this.#actionBar(),
       ),
       this.menuFor ? this.#countryMenu() : null,
+      this.plan ? this.#plannerModal() : null,
       this.detailNationId ? this.#nationDetail() : null,
       this.amendOpen ? this.#amendModal() : null,
       this.congressOpen ? this.#congressModal() : null,
@@ -1225,6 +1253,7 @@ export class GameScreen {
       ['alignments', t('world.alignments', 'Alignments')],
       ['treaties', t('world.treaties', 'Treaties')],
       ['ties', t('world.ties', 'Ties')],
+      ['forces', t('world.forces', 'Forces')],
       ['borders', t('world.borders', 'Borders')],
       ['rankings', t('world.rankings', 'Rankings')],
     ];
@@ -1239,9 +1268,10 @@ export class GameScreen {
       ),
       this.worldTab === 'treaties' ? this.#treatiesTab()
         : this.worldTab === 'ties' ? this.#tiesTab()
-          : this.worldTab === 'borders' ? this.#bordersTab()
-            : this.worldTab === 'rankings' ? this.#rankingsTab()
-              : this.#alignmentsTab(),
+          : this.worldTab === 'forces' ? this.#forcesTab()
+            : this.worldTab === 'borders' ? this.#bordersTab()
+              : this.worldTab === 'rankings' ? this.#rankingsTab()
+                : this.#alignmentsTab(),
     );
   }
 
@@ -1677,6 +1707,333 @@ export class GameScreen {
         : h('p.panel__note', t('ties.noExchanges',
             'Nothing is on anybody’s desk. Demands and offers are in the Diplomacy tab; they are answered the quarter after you send them.')),
     );
+  }
+
+  /**
+   * The armoury.
+   *
+   * `military: 87` told a player nothing about what they had. This is the order
+   * of battle: ten arms of service with a count you can read, what is available
+   * this quarter after readiness, what is standing on a front somewhere, what
+   * technology makes each formation worth, and what the war has already written
+   * off. Under it, if there is a war on, the fronts it is being fought on.
+   */
+  #forcesTab() {
+    const game = this.game;
+    const report = arsenalReport(game, game.playerId);
+    const out = deployed(game, game.playerId);
+    const wars = activeWarsFor(game, game.playerId);
+
+    return h('div.worldbody',
+      h('h3.subhead', t('forces.head', 'Order of battle')),
+      h('div.arsenal__summary',
+        h('div',
+          h('span.arsenal__label', t('forces.strength', 'Deployable strength')),
+          h('span.arsenal__value', String(report.total)),
+        ),
+        h('div',
+          h('span.arsenal__label', t('forces.depletion', 'Written off')),
+          h('span.arsenal__value', {
+            class: report.depletion > 0.4 ? 'arsenal__value is-bad' : 'arsenal__value',
+          }, `${Math.round(report.depletion * 100)}%`),
+        ),
+        h('div',
+          h('span.arsenal__label', t('forces.deployed', 'On a front')),
+          h('span.arsenal__value',
+            String(Object.values(out).reduce((sum, n) => sum + n, 0))),
+        ),
+      ),
+      h('p.panel__note', report.depletion > 0.35
+        ? t('forces.thin', 'The depots are thin. Industry replaces what is missing a fraction at a time, and it does not go faster because you need it to.')
+        : t('forces.note', 'What you actually have. Readiness decides how much of it could move this quarter; technology decides what one formation of it is worth.')),
+
+      h('div.arsenal',
+        report.arms.filter((arm) => arm.establishment > 0).map((arm) =>
+          h('div.arm', { class: arm.share < 0.6 ? 'arm is-thin' : 'arm' },
+            h('span.arm__icon', arm.icon),
+            h('div.arm__body',
+              h('div.arm__head',
+                h('span.arm__name', t(`arm.${arm.id}`, arm.name)),
+                h('span.arm__count',
+                  t('forces.count', '{n} {unit}', { n: arm.n, unit: t(`unit.${arm.unit}`, arm.unit) })),
+              ),
+              h('div.arm__track',
+                h('span.arm__fill', {
+                  style: { width: `${Math.min(100, Math.round(arm.share * 100))}%` },
+                }),
+                out[arm.id]
+                  ? h('span.arm__deployed', {
+                      style: { width: `${Math.min(100, Math.round((out[arm.id] / Math.max(1, arm.establishment)) * 100))}%` },
+                      title: t('forces.onFront', '{n} standing on a front', { n: out[arm.id] }),
+                    })
+                  : null,
+              ),
+              h('div.arm__meta',
+                h('span', t('forces.ready', '{n} ready', { n: arm.available })),
+                h('span', t('forces.quality', 'quality {n}', { n: arm.quality })),
+                arm.lost ? h('span.arm__lost', t('forces.lost', '{n} lost', { n: arm.lost })) : null,
+                out[arm.id] ? h('span.arm__at', t('forces.committed', '{n} committed', { n: out[arm.id] })) : null,
+              ),
+            ),
+          ),
+        ),
+      ),
+
+      wars.length ? this.#frontsBlock(wars) : h('p.panel__note',
+        t('forces.peace', 'Nothing is deployed. The fronts of a war appear here once there is one.')),
+    );
+  }
+
+  /** Every front of every war you are in, with its line and what holds it. */
+  #frontsBlock(wars) {
+    const game = this.game;
+    return h('div',
+      h('h3.subhead', t('forces.frontsHead', 'The fronts')),
+      h('p.panel__note', t('forces.frontsNote',
+        'Each sector is fought on its own terms. The ground decides what an arm is worth there, so where you attack matters as much as how hard.')),
+      wars.slice(0, 3).map((war) => h('div.frontgroup',
+        h('div.frontgroup__war', war.name),
+        frontReport(game, war).map((front) => this.#frontCard(war, front)),
+      )),
+    );
+  }
+
+  #frontCard(war, front) {
+    const game = this.game;
+    const total = Math.max(1, front.yourStrength + front.theirStrength);
+    return h('div.front', { class: `front is-${front.state}` },
+      h('div.front__head',
+        h('span.front__icon', front.terrain.icon),
+        h('div.front__title',
+          h('div.front__name', front.label),
+          h('div.front__terrain', front.terrainName),
+        ),
+        h('span.front__state', t(`frontState.${front.state}`, FRONT_STATES[front.state])),
+      ),
+      // The line, drawn from your side of it: right is your way.
+      h('div.front__line',
+        h('span.front__marker', { style: { left: `${clampPct(50 + front.mine / 2)}%` } }),
+      ),
+      h('div.front__bar',
+        h('span.front__yours', { style: { width: `${Math.round((front.yourStrength / total) * 100)}%` } }),
+        h('span.front__theirs', { style: { width: `${Math.round((front.theirStrength / total) * 100)}%` } }),
+      ),
+      h('div.front__meta',
+        h('span', t('forces.yours', 'yours {n}', { n: front.yourStrength })),
+        h('span', t('forces.theirs', 'theirs {n}', { n: front.theirStrength })),
+        h('span', t('forces.supply', 'supply {n}%', { n: front.supplyYours })),
+        front.casualties
+          ? h('span', t('forces.casualties', '{n}k casualties', { n: Math.round(front.casualties / 1000) }))
+          : null,
+      ),
+      h('div.front__arms',
+        Object.entries(front.yours).sort((a, b) => b[1] - a[1]).slice(0, 6).map(([armId, n]) =>
+          h('span.front__arm', { title: t(`arm.${armId}`, ARMS_BY_ID[armId]?.name || armId) },
+            `${ARMS_BY_ID[armId]?.icon || '·'} ${n}`)),
+      ),
+      h('button.btn.btn--tiny.btn--block', {
+        onclick: () => this.#openPlanner(war, front.id),
+      }, t('forces.plan', 'Plan an offensive here')),
+    );
+  }
+
+  // ── The offensive planner ────────────────────────────────────────────────
+
+  /**
+   * Where, with what, and how much.
+   *
+   * The three questions a war never asked. The planner answers all of them in
+   * one screen: pick the sector, pick the operation, and move the arms in and
+   * out of it while the odds, the suitability of the mix to the ground and the
+   * bill all move with you.
+   */
+  #openPlanner(war, frontId, operationId = null) {
+    const game = this.game;
+    const fronts = frontsOf(game, war);
+    const front = fronts.find((f) => f.id === frontId) || fronts[0];
+    const operation = operationId
+      ? OFFENSIVES.find((op) => op.id === operationId)
+      : OFFENSIVES.find((op) => op.prefers?.includes(front.terrainId)) || OFFENSIVES[0];
+    this.plan = {
+      warId: war.id,
+      frontId: front.id,
+      operationId: operation.id,
+      mix: defaultMix(game, game.playerId, operation.offensive.intent, operation.offensive.share),
+    };
+    this.render();
+  }
+
+  #closePlanner() {
+    this.plan = null;
+    this.render();
+  }
+
+  #plannerModal() {
+    const game = this.game;
+    const plan = this.plan;
+    const war = game.wars.find((w) => w.id === plan.warId);
+    if (!war || !war.active) { this.plan = null; return null; }
+    const fronts = frontReport(game, war);
+    const front = frontsOf(game, war).find((f) => f.id === plan.frontId) || frontsOf(game, war)[0];
+    const shown = fronts.find((f) => f.id === front.id);
+    const side = war.attackers.includes(game.playerId) ? 'attackers' : 'defenders';
+    const operation = OFFENSIVES.find((op) => op.id === plan.operationId) || OFFENSIVES[0];
+    const terrain = TERRAIN[front.terrainId] || TERRAIN.plain;
+
+    const odds = offensiveOdds(game, war, front, side, plan.mix);
+    const bill = commitmentCost(game, game.playerId, plan.mix)
+      + actionCost(operation, game.nations[game.playerId]);
+    const funds = availableFunds(game.nations[game.playerId]);
+
+    const setMix = (armId, n) => {
+      const pool = available(game, game.playerId, armId)
+        - Object.entries(front.committed[side] || {}).reduce((s, [id, c]) => s + (id === armId ? c : 0), 0);
+      plan.mix = { ...plan.mix, [armId]: Math.max(0, Math.min(pool, n)) };
+      if (!plan.mix[armId]) delete plan.mix[armId];
+      this.render();
+    };
+
+    return h('div.modal', { role: 'dialog', 'aria-modal': 'true',
+      onclick: (e) => { if (e.target.classList.contains('modal')) this.#closePlanner(); } },
+      h('div.modal__panel.modal__panel--planner',
+        h('button.modal__close', { onclick: () => this.#closePlanner(), 'aria-label': t('common.close', 'Close') }, '✕'),
+        h('div.modal__eyebrow', `${war.name} · ${frontName(front)}`),
+        h('h2.modal__title', t('plan.head', 'Plan an offensive')),
+
+        h('div.planner',
+          // ── Where ──────────────────────────────────────────────────────
+          h('div.planner__col',
+            h('h3.subhead', t('plan.where', 'Where')),
+            h('div.planner__fronts',
+              fronts.map((f) => h('button.planfront', {
+                class: f.id === front.id ? 'planfront is-active' : 'planfront',
+                onclick: () => { plan.frontId = f.id; this.render(); },
+              },
+                h('span.planfront__icon', f.terrain.icon),
+                h('div',
+                  h('div.planfront__name', f.label),
+                  h('div.planfront__terrain', f.terrainName),
+                ),
+                h('span.planfront__line', `${f.mine > 0 ? '+' : ''}${f.mine}`),
+              )),
+            ),
+            h('p.planner__terrain', t(`terrainBlurb.${terrain.id}`, terrain.blurb)),
+
+            h('h3.subhead', t('plan.what', 'What kind of operation')),
+            h('div.planner__ops',
+              OFFENSIVES.filter((op) => !op.prefers || op.prefers.includes(front.terrainId))
+                .slice(0, 8)
+                .map((op) => h('button.planop', {
+                  class: op.id === plan.operationId ? 'planop is-active' : 'planop',
+                  title: tAction(op, 'blurb'),
+                  onclick: () => {
+                    plan.operationId = op.id;
+                    plan.mix = defaultMix(game, game.playerId, op.offensive.intent, op.offensive.share);
+                    this.render();
+                  },
+                }, tAction(op))),
+            ),
+          ),
+
+          // ── With what ──────────────────────────────────────────────────
+          h('div.planner__col.planner__col--wide',
+            h('h3.subhead', t('plan.with', 'With what')),
+            h('p.panel__note', t('plan.withNote',
+              'The multiplier beside each arm is what the ground does to it. Anything under one is force you are throwing away.')),
+            h('div.planner__arms',
+              ARMS.map((arm) => {
+                const pool = available(game, game.playerId, arm.id);
+                if (!pool) return null;
+                const factor = terrain.arms[arm.id] ?? 1;
+                const n = plan.mix[arm.id] || 0;
+                return h('div.planarm', { class: factor < 0.7 ? 'planarm is-poor' : factor > 1.25 ? 'planarm is-good' : 'planarm' },
+                  h('span.planarm__icon', arm.icon),
+                  h('span.planarm__name', t(`arm.${arm.id}`, arm.name)),
+                  h('span.planarm__factor', {
+                    title: t('plan.factorHint', 'What {terrain} does to this arm', { terrain: shown?.terrainName || '' }),
+                  }, `×${factor.toFixed(2)}`),
+                  h('div.planarm__set',
+                    h('button.planarm__btn', { onclick: () => setMix(arm.id, n - Math.max(1, Math.round(pool * 0.1))) }, '−'),
+                    h('span.planarm__n', `${n} / ${pool}`),
+                    h('button.planarm__btn', { onclick: () => setMix(arm.id, n + Math.max(1, Math.round(pool * 0.1))) }, '+'),
+                  ),
+                );
+              }).filter(Boolean),
+            ),
+            h('div.planner__quick',
+              h('span.planner__quickLabel', t('plan.presets', 'Or take a standard mix:')),
+              [['break', 'breakthrough'], ['attrit', 'bombardment'], ['strike', 'deep strike'], ['hold', 'defensive']]
+                .map(([intent, label]) => h('button.btn.btn--tiny.btn--ghost', {
+                  onclick: () => {
+                    plan.mix = defaultMix(game, game.playerId, intent, 0.5);
+                    this.render();
+                  },
+                }, t(`plan.preset.${intent}`, label))),
+            ),
+          ),
+
+          // ── How it reads ───────────────────────────────────────────────
+          h('div.planner__col',
+            h('h3.subhead', t('plan.reads', 'How it reads')),
+            h('div.planodds',
+              h('span.planodds__value', {
+                class: odds.chance >= 0.6 ? 'planodds__value is-good' : odds.chance >= 0.35 ? 'planodds__value' : 'planodds__value is-bad',
+              }, `${Math.round(odds.chance * 100)}%`),
+              h('span.planodds__label', t('plan.chance', 'chance of taking ground')),
+            ),
+            h('div.planner__lines',
+              h('div.planline',
+                h('span', t('plan.fit', 'Suits the ground')),
+                h('span', { class: odds.suitability < 0.8 ? 'is-bad' : odds.suitability > 1.15 ? 'is-good' : '' },
+                  `×${odds.suitability.toFixed(2)}`)),
+              h('div.planline', h('span', t('plan.ratio', 'Local balance')), h('span', `${odds.ratio.toFixed(2)}:1`)),
+              h('div.planline', h('span', t('plan.sustain', 'Can you sustain it')), h('span', `×${odds.supply.toFixed(2)}`)),
+              h('div.planline', h('span', t('plan.bill', 'Bill this quarter')),
+                h('span', { class: bill > funds ? 'is-bad' : '' }, money(bill))),
+            ),
+            h('div.planner__why',
+              odds.factors.map((f) => h('div.planwhy',
+                { class: f.value > 0 ? 'planwhy is-for' : 'planwhy is-against' },
+                h('span', t(`planWhy.${f.id}`, f.label)),
+                h('span', `${f.value > 0 ? '+' : ''}${Math.round(f.value * 100)}`),
+              )),
+            ),
+            h('p.panel__note', t('plan.commitNote',
+              'What you commit stays on that front until it is withdrawn or destroyed. This is a decision, not a button.')),
+            h('button.btn.btn--primary.btn--block', {
+              disabled: !Object.keys(plan.mix).length,
+              onclick: () => {
+                const order = {
+                  actionId: operation.id,
+                  warId: war.id,
+                  plan: { frontId: front.id, mix: { ...plan.mix } },
+                };
+                this.plan = null;
+                this.#queuePlanned(operation, order);
+              },
+            }, t('plan.commit', 'Give the order')),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /** Queue an order that already carries a plan. */
+  #queuePlanned(action, order) {
+    const room = canQueue(this.game, this.orders, action, null);
+    if (!room.ok) { this.app.toast(room.reason); this.render(); return; }
+    const availability = actionAvailability(this.game, action, null);
+    if (!availability.ok) { this.app.toast(availability.reason); this.render(); return; }
+    const mods = gameModifiers(this.game);
+    this.orders.push({
+      ...order,
+      name: action.name,
+      cost: actionCost(action, this.game.nations[this.game.playerId])
+        + commitmentCost(this.game, this.game.playerId, order.plan.mix),
+      pc: action.pc,
+      chance: successChance(this.game, action, this.game.playerId, null, mods),
+    });
+    this.render();
   }
 
   #bordersTab() {
@@ -2701,48 +3058,57 @@ export class GameScreen {
       role: 'dialog', 'aria-modal': 'true',
       onclick: (e) => { if (e.target.classList.contains('modal')) this.#closeDetail(); },
     },
-      h('div.modal__panel',
+      // The country file used to be a single narrow column of stacked sections
+      // in a forty-rem modal, which meant scrolling past four books to reach
+      // the fifth. It is a dossier, so it is laid out like one: as wide as the
+      // window will allow, and the books in columns that reflow down to one on
+      // a phone.
+      h('div.modal__panel.modal__panel--country',
         h('button.modal__close', { onclick: () => this.#closeDetail(), 'aria-label': 'Close' }, '✕'),
         h('div.detail__head',
           h('span.detail__flag', def.flag),
-          h('div',
+          h('div.detail__title',
             h('h2.modal__title', tNation(def)),
             h('div.detail__sub',
               tNation(def, 'capital') ? `◉ ${tNation(def, 'capital')} · ` : '',
               `${tNation(def, 'government')} · ${tNation(def, 'leaderTitle')} · ${state.population.toFixed(0)}M`),
+            h('p.detail__brief', tNation(def, 'brief')),
           ),
+          isPlayer ? null : h('div.detail__relation', { style: { color: relationColour(relation) } },
+            `${relationLabel(relation)} · ${Math.round(relation)}`),
         ),
-        h('p.detail__brief', tNation(def, 'brief')),
-        isPlayer ? null : h('div.detail__relation', { style: { color: relationColour(relation) } },
-          `${relationLabel(relation)} — relation ${Math.round(relation)}`),
 
-        // Five books rather than one grid of ten figures: what the country
+        // Six books rather than one grid of ten figures: what the country
         // earns, who lives in it, what it can fight with, whether it holds
-        // together, and what the rest of the world makes of it.
-        this.#detailEconomy(id, state),
-        this.#detailPeople(id, state),
-        this.#detailForce(id, state),
-        this.#detailCohesion(id, state),
-        this.#detailStanding(id, state, def),
-        this.#detailTies(id),
+        // together, what the rest of the world makes of it, and what it runs on.
+        h('div.detail__columns',
+          this.#detailEconomy(id, state),
+          this.#detailPeople(id, state),
+          this.#detailForce(id, state),
+          this.#detailCohesion(id, state),
+          this.#detailStanding(id, state, def),
+          this.#detailTies(id),
 
-        history.length > 2
-          ? h('div.detail__section',
-              h('h3.subhead', t('detail.trend', 'Over the run')),
-              h('div.trends',
-                trend(t('stat.gdp', 'GDP'), history.map((p) => p.gdp), (v) => `$${v.toFixed(2)}T`),
-                trend(t('stat.military', 'Military'), history.map((p) => p.military), (v) => v.toFixed(0)),
-                trend(t('stat.stability', 'Stability'), history.map((p) => p.stability), (v) => v.toFixed(0)),
-              ),
-            )
-          : null,
+          history.length > 2
+            ? h('div.detail__section',
+                h('h3.subhead', t('detail.trend', 'Over the run')),
+                h('div.trends',
+                  trend(t('stat.gdp', 'GDP'), history.map((p) => p.gdp), (v) => `$${v.toFixed(2)}T`),
+                  trend(t('stat.military', 'Military'), history.map((p) => p.military), (v) => v.toFixed(0)),
+                  trend(t('stat.stability', 'Stability'), history.map((p) => p.stability), (v) => v.toFixed(0)),
+                ),
+              )
+            : null,
 
-        state.modifiers.length
-          ? h('div.modifiers',
-              h('h3.subhead', t('panel.inEffect', 'In effect')),
-              state.modifiers.map((m) => h('div.modifier', h('span', tModifier(m.label)), h('span.modifier__turns', `${m.turnsLeft}q`))))
-          : null,
-        isPlayer ? null : this.#detailOrders(id),
+          state.modifiers.length
+            ? h('div.detail__section',
+                h('h3.subhead', t('panel.inEffect', 'In effect')),
+                h('div.modifiers',
+                  state.modifiers.map((m) => h('div.modifier',
+                    h('span', tModifier(m.label)), h('span.modifier__turns', `${m.turnsLeft}q`)))))
+            : null,
+          isPlayer ? null : this.#detailOrders(id),
+        ),
       ),
     );
   }

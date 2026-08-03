@@ -17,6 +17,7 @@ import { PROGRAMMES } from './programmes.js';
 import { ALLIANCE_ORDERS } from './alliances.js';
 import { WAR_OPERATIONS } from './waroperations.js';
 import { DEMAND_ORDERS, TRADE_ORDERS, WAR_ENTRY_ORDERS } from './tradeorders.js';
+import { OFFENSIVES } from './offensives.js';
 import { canSign as canSignTreaty } from './treaties.js';
 import { permits } from './constitution.js';
 
@@ -1030,6 +1031,7 @@ ACTIONS.push(...WAR_OPERATIONS);
 ACTIONS.push(...TRADE_ORDERS);
 ACTIONS.push(...WAR_ENTRY_ORDERS);
 ACTIONS.push(...DEMAND_ORDERS);
+ACTIONS.push(...OFFENSIVES);
 
 /**
  * Society is carved out of the domestic pile rather than invented: health,

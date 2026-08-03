@@ -1807,3 +1807,185 @@ kbd {
 .rallycand__fill { display: block; height: 100%; background: var(--accent); }
 .rallycand__odds { font-family: var(--mono); font-size: 0.72rem; color: var(--muted); min-width: 2.4rem; text-align: right; }
 .rallycand__why { font-size: 0.64rem; color: var(--muted-2); min-width: 9rem; text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ── The country file, as a dossier rather than a column ──────────────────── */
+
+.modal__panel--country {
+  /* As wide as the window will give, because there are six books in here and
+     stacking them in a forty-rem column meant scrolling past four to reach the
+     fifth. */
+  max-width: min(96rem, 96vw);
+  padding: 1.5rem 1.7rem 1.7rem;
+  max-height: 92vh;
+}
+.modal__panel--country .detail__head {
+  align-items: flex-start;
+  gap: 1rem;
+  padding-bottom: 0.8rem;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 1rem;
+}
+.detail__title { flex: 1; min-width: 0; }
+.modal__panel--country .modal__title { margin-bottom: 0.15rem; }
+.modal__panel--country .detail__brief { margin: 0.35rem 0 0; max-width: 62ch; }
+.modal__panel--country .detail__relation {
+  margin: 0; padding: 0.3rem 0.7rem; white-space: nowrap;
+  background: var(--bg-2); border-radius: 999px; font-size: 0.8rem;
+}
+
+/* Masonry-ish columns: the books flow into whatever width there is, and each
+   one stays whole rather than being split across a column break. */
+.detail__columns {
+  columns: 3 22rem;
+  column-gap: 1.2rem;
+}
+.detail__columns > * {
+  break-inside: avoid;
+  page-break-inside: avoid;
+  -webkit-column-break-inside: avoid;
+  margin: 0 0 1.1rem;
+  display: block;
+}
+.modal__panel--country .detail__section {
+  background: var(--bg-2);
+  border-radius: var(--radius-sm);
+  padding: 0.7rem 0.8rem 0.8rem;
+  margin-bottom: 1.1rem;
+}
+.modal__panel--country .detail__section .subhead { margin-top: 0; }
+.modal__panel--country .detailstat { background: var(--panel-2); }
+.modal__panel--country .detail__grid {
+  grid-template-columns: repeat(auto-fill, minmax(7.5rem, 1fr));
+  margin-bottom: 0;
+}
+
+@media (max-width: 1100px) {
+  .detail__columns { columns: 2 20rem; }
+}
+@media (max-width: 720px) {
+  .modal { padding: 0.6rem; }
+  .modal__panel--country { padding: 1.1rem 0.9rem 1.2rem; max-height: 94vh; max-width: 100%; }
+  /* One column on a phone: multi-column and vertical scrolling do not mix. */
+  .detail__columns { columns: 1; }
+  .modal__panel--country .detail__head { flex-wrap: wrap; gap: 0.6rem; }
+  .modal__panel--country .detail__relation { order: 3; width: 100%; text-align: center; }
+  .modal__panel--country .modal__title { font-size: 1.25rem; }
+  .modal__panel--country .detail__grid { grid-template-columns: repeat(auto-fill, minmax(6.6rem, 1fr)); }
+}
+
+/* ── The armoury ──────────────────────────────────────────────────────────── */
+
+.arsenal__summary { display: flex; gap: 1.2rem; flex-wrap: wrap; margin-bottom: 0.5rem; }
+.arsenal__label { display: block; font-size: 0.64rem; letter-spacing: 0.09em; text-transform: uppercase; color: var(--muted-2); }
+.arsenal__value { font-family: var(--mono); font-size: 1.05rem; }
+.arsenal__value.is-bad { color: var(--warn); }
+
+.arsenal { display: flex; flex-direction: column; gap: 0.3rem; margin-top: 0.5rem; }
+.arm { display: flex; gap: 0.5rem; align-items: flex-start; }
+.arm.is-thin .arm__fill { background: var(--warn); }
+.arm__icon { font-size: 1rem; width: 1.4rem; text-align: center; line-height: 1.4; }
+.arm__body { flex: 1; min-width: 0; }
+.arm__head { display: flex; justify-content: space-between; gap: 0.5rem; align-items: baseline; }
+.arm__name { font-size: 0.78rem; }
+.arm__count { font-family: var(--mono); font-size: 0.72rem; color: var(--muted); white-space: nowrap; }
+.arm__track { position: relative; height: 6px; background: var(--panel-2); border-radius: 999px; overflow: hidden; margin: 0.15rem 0; }
+.arm__fill { position: absolute; inset: 0 auto 0 0; height: 100%; background: var(--accent); }
+.arm__deployed { position: absolute; inset: 0 auto 0 0; height: 100%; background: var(--ink); opacity: 0.35; }
+.arm__meta { display: flex; flex-wrap: wrap; gap: 0.5rem; font-family: var(--mono); font-size: 0.63rem; color: var(--muted-2); }
+.arm__lost { color: var(--warn); }
+.arm__at { color: var(--accent); }
+
+/* ── Fronts ───────────────────────────────────────────────────────────────── */
+
+.frontgroup { margin-bottom: 0.8rem; }
+.frontgroup__war { font-family: var(--display); font-size: 0.86rem; margin-bottom: 0.3rem; }
+.front { background: var(--bg-2); border-radius: var(--radius-sm); padding: 0.5rem 0.6rem; margin-bottom: 0.35rem; border-left: 3px solid var(--line); }
+.front.is-breaking-through { border-left-color: var(--accent); }
+.front.is-advancing { border-left-color: color-mix(in srgb, var(--accent) 60%, var(--line)); }
+.front.is-giving-ground { border-left-color: color-mix(in srgb, var(--warn) 60%, var(--line)); }
+.front.is-collapsing { border-left-color: var(--warn); }
+.front__head { display: flex; gap: 0.45rem; align-items: baseline; }
+.front__icon { font-size: 0.95rem; }
+.front__title { flex: 1; min-width: 0; }
+.front__name { font-size: 0.82rem; font-weight: 600; }
+.front__terrain { font-size: 0.66rem; color: var(--muted-2); }
+.front__state { font-size: 0.64rem; font-family: var(--mono); color: var(--muted-2); white-space: nowrap; }
+.front__line { position: relative; height: 3px; background: var(--panel-2); border-radius: 999px; margin: 0.4rem 0 0.25rem; }
+.front__marker { position: absolute; top: -3px; width: 3px; height: 9px; background: var(--accent); border-radius: 2px; transform: translateX(-50%); }
+.front__bar { display: flex; height: 5px; border-radius: 999px; overflow: hidden; background: var(--panel-2); }
+.front__yours { background: var(--accent); }
+.front__theirs { background: var(--st-serious, var(--warn)); opacity: 0.75; }
+.front__meta { display: flex; flex-wrap: wrap; gap: 0.5rem; font-family: var(--mono); font-size: 0.63rem; color: var(--muted-2); margin-top: 0.25rem; }
+.front__arms { display: flex; flex-wrap: wrap; gap: 0.3rem; font-size: 0.68rem; color: var(--muted); margin: 0.25rem 0 0.35rem; }
+.front__arm { font-family: var(--mono); }
+
+/* ── The offensive planner ────────────────────────────────────────────────── */
+
+.modal__panel--planner { max-width: min(76rem, 96vw); }
+.planner { display: grid; grid-template-columns: 1fr 1.35fr 1fr; gap: 1.1rem; align-items: start; }
+.planner__col { min-width: 0; }
+.planner__col .subhead { margin-top: 0; }
+
+.planner__fronts { display: flex; flex-direction: column; gap: 0.25rem; }
+.planfront {
+  display: flex; align-items: center; gap: 0.45rem; text-align: left; width: 100%;
+  background: var(--bg-2); border: 1px solid transparent; border-radius: var(--radius-sm);
+  padding: 0.35rem 0.5rem; cursor: pointer; color: var(--ink); font: inherit;
+}
+.planfront:hover { border-color: var(--line-strong); }
+.planfront.is-active { border-color: var(--accent); background: var(--panel-2); }
+.planfront__icon { font-size: 1rem; }
+.planfront__name { font-size: 0.78rem; }
+.planfront__terrain { font-size: 0.64rem; color: var(--muted-2); }
+.planfront__line { margin-left: auto; font-family: var(--mono); font-size: 0.72rem; color: var(--muted); }
+.planner__terrain { font-size: 0.72rem; color: var(--muted); margin: 0.4rem 0 0.8rem; }
+.planner__ops { display: flex; flex-wrap: wrap; gap: 0.25rem; }
+.planop {
+  background: var(--panel-2); border: 1px solid var(--line); border-radius: 999px;
+  padding: 0.14rem 0.55rem; font-size: 0.7rem; cursor: pointer; color: var(--ink);
+}
+.planop:hover { border-color: var(--line-strong); }
+.planop.is-active { border-color: var(--accent); color: var(--accent); }
+
+.planner__arms { display: flex; flex-direction: column; gap: 0.2rem; }
+.planarm {
+  display: flex; align-items: center; gap: 0.4rem; font-size: 0.76rem;
+  background: var(--bg-2); border-radius: var(--radius-sm); padding: 0.22rem 0.45rem;
+  border-left: 3px solid transparent;
+}
+.planarm.is-good { border-left-color: var(--accent); }
+.planarm.is-poor { border-left-color: var(--warn); opacity: 0.82; }
+.planarm__icon { width: 1.2rem; text-align: center; }
+.planarm__name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.planarm__factor { font-family: var(--mono); font-size: 0.68rem; color: var(--muted-2); min-width: 3rem; text-align: right; }
+.planarm.is-good .planarm__factor { color: var(--accent); }
+.planarm.is-poor .planarm__factor { color: var(--warn); }
+.planarm__set { display: flex; align-items: center; gap: 0.2rem; }
+.planarm__btn {
+  background: var(--panel-2); border: 1px solid var(--line); border-radius: 4px;
+  width: 1.25rem; height: 1.25rem; line-height: 1; cursor: pointer; color: var(--ink); font-size: 0.8rem;
+}
+.planarm__btn:hover { border-color: var(--accent); }
+.planarm__n { font-family: var(--mono); font-size: 0.7rem; min-width: 3.6rem; text-align: center; }
+.planner__quick { display: flex; flex-wrap: wrap; align-items: center; gap: 0.25rem; margin-top: 0.6rem; }
+.planner__quickLabel { font-size: 0.68rem; color: var(--muted-2); margin-right: 0.15rem; }
+
+.planodds { text-align: center; background: var(--bg-2); border-radius: var(--radius-sm); padding: 0.6rem; margin-bottom: 0.6rem; }
+.planodds__value { display: block; font-family: var(--mono); font-size: 1.9rem; line-height: 1; }
+.planodds__value.is-good { color: var(--accent); }
+.planodds__value.is-bad { color: var(--warn); }
+.planodds__label { display: block; font-size: 0.66rem; color: var(--muted-2); margin-top: 0.2rem; }
+.planner__lines { display: flex; flex-direction: column; gap: 0.15rem; margin-bottom: 0.6rem; }
+.planline { display: flex; justify-content: space-between; font-size: 0.75rem; }
+.planline span:last-child { font-family: var(--mono); }
+.planline .is-good { color: var(--accent); }
+.planline .is-bad { color: var(--warn); }
+.planner__why { display: flex; flex-direction: column; gap: 0.1rem; margin-bottom: 0.6rem; }
+.planwhy { display: flex; justify-content: space-between; font-size: 0.68rem; color: var(--muted-2); }
+.planwhy.is-for span:last-child { color: var(--accent); font-family: var(--mono); }
+.planwhy.is-against span:last-child { color: var(--warn); font-family: var(--mono); }
+
+@media (max-width: 980px) {
+  .planner { grid-template-columns: 1fr; gap: 0.9rem; }
+  .modal__panel--planner { max-width: 100%; }
+}

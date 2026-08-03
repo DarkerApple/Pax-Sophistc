@@ -398,13 +398,42 @@ test('scoring produces a bounded grade and evaluates objectives', () => {
   for (const obj of score.objectives) assert.equal(typeof obj.met, 'boolean');
 });
 
-test('collapse is possible and is graded as such', () => {
+test('a government on the floor gets one quarter and one emergency, then falls', () => {
   const game = createGame({ playerNationId: 'cub', difficulty: 10, seed: 'collapse', totalTurns: 40 });
-  game.nations.cub.stability = 3;
-  game.nations.cub.unrest = 96;
-  const report = advanceTurn(game, { orders: [] });
+  game.nations.cub.stability = 0;
+  game.nations.cub.unrest = 99;
+
+  // The first quarter on the floor is not the end. The state suspends normal
+  // government and holds — which is the quarter a player still has to act in.
+  const first = advanceTurn(game, { orders: [] });
+  assert.equal(game.status, 'active', 'a government does not fall the first quarter it wobbles');
+  assert.equal(first.ending, undefined);
+  assert.equal(game.collapseWatch, 1);
+  assert.ok(game.emergencyUsed, 'and it reaches for emergency powers doing it');
+  assert.ok(game.nations.cub.modifiers.some((m) => m.source === 'emergency'));
+
+  // Put it back on the floor and there is nothing left to reach for. It has to
+  // be *on* the floor when the quarter is checked, and a quarter's worth of
+  // institutional reversion happens before that — which is itself the point.
+  game.nations.cub.stability = 0;
+  game.nations.cub.unrest = 99;
+  const second = advanceTurn(game, { orders: [] });
   assert.equal(game.status, 'defeat');
-  assert.equal(report.ending.kind, 'collapse');
+  assert.equal(second.ending.kind, 'collapse');
+});
+
+test('a government that pulls back from the brink is not still counting down', () => {
+  const game = createGame({ playerNationId: 'cub', difficulty: 10, seed: 'rally', totalTurns: 40 });
+  game.nations.cub.stability = 0;
+  game.nations.cub.unrest = 99;
+  advanceTurn(game, { orders: [] });
+  assert.equal(game.collapseWatch, 1);
+
+  game.nations.cub.stability = 48;
+  game.nations.cub.unrest = 40;
+  advanceTurn(game, { orders: [] });
+  assert.equal(game.collapseWatch, 0, 'surviving it resets the clock');
+  assert.equal(game.status, 'active');
 });
 
 // ── Digest for the narrator ────────────────────────────────────────────────

@@ -195,6 +195,8 @@ test('no Korean string leaves a placeholder that nothing fills', () => {
     'theirs', 'yours', 'via', 'side', 'weight', 'threat',
     // Rallying capitals that owe you nothing.
     'them', 'caller', 'all', 'n', 'war',
+    // The arsenal, the fronts and the offensive planner.
+    'unit', 'terrain', 'front', 'who',
   ]);
   for (const [key, value] of Object.entries(KO.ui)) {
     if (typeof value !== 'string') continue;

@@ -12,6 +12,7 @@ import {
   combatPower,
   defOf,
   getRelation,
+  livePower,
   logEvent,
   sovereignIds,
   sovereignStates,
@@ -19,6 +20,7 @@ import {
 import {
   areaOf,
   cellArea,
+  cellsOf,
   frontAnchor,
   hasNoLand,
   landCells,
@@ -32,6 +34,8 @@ import { nameWar } from './warnames.js';
 import { MIN_REACH, occupiersFor, reach, theatreOf, theatrePower, theatreWeight } from './reach.js';
 import { blocCall, mergeWars, tickWorldWar } from './worldwar.js';
 import { aiRally } from './rally.js';
+import { breakthrough, drawFronts, frontsOf, terrainOf, tickFronts } from './fronts.js';
+import { produce } from './arsenal.js';
 import { noteTradeBreak as severTiesNote, restoreTies, severTies } from './dependency.js';
 
 const HOME_GROUND_BONUS = 1.18;
@@ -116,6 +120,10 @@ export function declareWar(game, attackerId, defenderId, { rng, reason = 'unspec
     }
   }
 
+  // The ground this will actually be fought over, drawn once from the border
+  // the two of them share.
+  war.fronts = drawFronts(game, war);
+
   game.wars.push(war);
   game.worldTension = clamp(game.worldTension + 18, 0, 100);
   adjustRelation(game, attackerId, defenderId, -70);
@@ -199,13 +207,18 @@ export function tickWars(game, rng, mods) {
     const defPower = sidePower(game, war.defenders, war) * HOME_GROUND_BONUS * (1 - war.exhaustion.defenders / 170);
     const total = Math.max(1, atkPower + defPower);
 
-    // Swing on the *ratio*, not the share of the total. Share saturates: a 3:1
-    // advantage and a 30:1 advantage both read as "nearly all of it", and the
-    // superpower took as long to beat the small country as the near-peer did.
-    // A log ratio does not saturate, so overwhelming force overwhelms.
+    // Each sector is fought on its own terms and its own line moves; the war's
+    // headline score is what they add up to. The old single-number swing is
+    // still here as the floor, because coalitions and theatre reach are not a
+    // property of any one front — but the fronts are what actually decide it.
+    const sectors = tickFronts(game, war, rng, mods);
+    war.frontNotes = sectors;
+
     const ratio = Math.log2(Math.max(atkPower, 0.01) / Math.max(defPower, 0.01));
     const swing = Math.max(-32, Math.min(32, ratio * 13)) + rng.normal(0, 5.5);
-    war.warScore = clamp(war.warScore + swing, -100, 100);
+    // A quarter of the strategic balance, so a coalition still tells; the rest
+    // is what happened in the sectors.
+    war.warScore = clamp(war.warScore * 0.75 + (war.warScore + swing) * 0.25, -100, 100);
 
     const intensity = 1 + Math.min(1.2, total / 160);
     war.casualties += Math.round(intensity * rng.float(14, 38) * mods.eventSeverity * 1000);
@@ -303,10 +316,61 @@ export function tickWars(game, rng, mods) {
     }
   }
 
+  // Ground you are holding starts paying for itself once it has been held long
+  // enough to be administered rather than merely occupied. Taking land is meant
+  // to be worth doing.
+  reports.push(...occupationDividend(game));
+
   // "Press the advantage" buys one quarter of momentum, not a standing policy.
   for (const war of game.wars) war.pressed = false;
 
   game.wars = game.wars.filter((w) => w.active || game.turn - (w.endedTurn ?? 0) < 24);
+  return reports;
+}
+
+/**
+ * What occupied ground is worth once it is actually being run.
+ *
+ * The whole point of taking territory was, until now, that the map looked
+ * different. Ground held for two quarters starts producing: its output, its
+ * people and its resources are yours while you hold it, which is why countries
+ * do this. It is not free — the occupation burden is applied elsewhere — but it
+ * is no longer purely a cost.
+ */
+function occupationDividend(game) {
+  const reports = [];
+  const seen = new Map();
+  for (const war of game.wars) {
+    if (!war.active) continue;
+    for (const [, from, holder] of war.occupied || []) {
+      if (!isSovereign(game, holder)) continue;
+      const key = `${holder}|${from}`;
+      seen.set(key, (seen.get(key) || 0) + 1);
+    }
+    war.heldFor = (war.heldFor || 0) + 1;
+  }
+
+  for (const [key, cells] of seen) {
+    const [holder, from] = key.split('|');
+    const state = game.nations[holder];
+    const victim = game.nations[from];
+    if (!state || !victim || cells < 2) continue;
+    // Value scaled by how much of them you are holding — a district is a
+    // district, half a country is an economy.
+    const share = Math.min(0.4, cells / Math.max(6, cellsOf(game, from).length + cells));
+    const yield_ = victim.gdp * share * 0.09;
+    if (yield_ <= 0.0005) continue;
+    state.gdp += yield_;
+    if (holder === game.playerId) {
+      reports.push({
+        type: 'occupation',
+        title: t('war.dividendTitle', 'What the Occupied Districts Are Worth'),
+        text: t('war.dividend',
+          'The territory you hold is producing again under your administration: ${n}B a quarter, against the cost of holding it.',
+          { n: Math.round(yield_ * 1000) }),
+      });
+    }
+  }
   return reports;
 }
 
@@ -414,8 +478,56 @@ function advanceFront(game, war, rng) {
   const forceEdge = Math.min(2.5, Math.max(0.4, rawEdge));
   // Up to ~45% of what is left, in one quarter, when the rout is total and the
   // attacker outclasses the defender several times over.
-  const fraction = Math.min(0.45, 0.04 + pressure * pressure * 0.34 * Math.sqrt(forceEdge));
-  const wanted = held * fraction;
+  let fraction = Math.min(0.45, 0.04 + pressure * pressure * 0.34 * Math.sqrt(forceEdge));
+
+  // Ground moves through a sector that has broken open, not through an average.
+  // A front that is genuinely through is worth far more than the headline score
+  // suggests — which is what makes choosing where to attack pay.
+  const open = breakthrough(game, war);
+  if (open) {
+    const through = Math.abs(open.line);
+    // A sector that is genuinely through is worth a great deal of ground. This
+    // is the reward half of the design: picking the right front, sending the
+    // right arms and breaking it open should take more territory in a quarter
+    // than four quarters of grinding along the whole line.
+    fraction *= through >= 90 ? 3.2 : through >= 70 ? 2.2 : through >= 45 ? 1.55 : 1.15;
+    war.brokenFront = open.id;
+  } else {
+    // No sector is open. Whatever the strategic balance says, an unbroken line
+    // does not give up much ground, and this is most of why losing is slow.
+    fraction *= 0.6;
+    war.brokenFront = null;
+  }
+
+  // And a country defends its own heartland harder the less of it is left.
+  // Somebody down to a third of their territory is not collapsing faster, they
+  // are fighting in their own streets with nowhere to go.
+  //
+  // It is a defence, not a force field: against an enemy several times their
+  // size the last redoubt buys weeks, not the war, or a superpower could never
+  // finish a small neighbour at all.
+  const left = areaOf(game, target) / Math.max(1, startingArea(game, target));
+  if (rawEdge < 4) {
+    fraction *= left < 0.35 ? 0.5 : left < 0.6 ? 0.75 : 1;
+  }
+
+  // The ceiling rises with the breakthrough: a collapsed sector can give up
+  // most of what is behind it in one quarter.
+  fraction = Math.min(open && Math.abs(open.line) >= 70 ? 0.68 : 0.45, fraction);
+
+  // And a hard floor. A country being beaten by somebody roughly its own size
+  // can be pushed back to a rump, but it cannot be ground out of existence: the
+  // last tenth of a homeland costs more than a near-peer has. Only a genuinely
+  // overwhelming power gets past this.
+  let wanted = held * fraction;
+  if (powerGap(game, gaining, [target]) < ERASE_GAP) {
+    const floorKm2 = startingArea(game, target) * 1000 * 0.1;
+    wanted = Math.max(0, Math.min(wanted, held - floorKm2));
+    if (wanted <= 0) {
+      war.redoubt = target;
+      return null;
+    }
+  }
 
   // Beyond this the defender has no army left in the field and the rest of the
   // country is simply occupied. Being beaten badly is not the same as being
@@ -462,10 +574,20 @@ function settleOccupation(game, war, rng, kind, winners, losers) {
   const decisive = Math.abs(war.warScore) >= DECISIVE_SCORE && kind !== 'nuclear';
   const overwhelming = Math.abs(war.warScore) >= OVERWHELMING_SCORE && kind === 'decisive';
 
+  // Being beaten badly is not the same as being erased. Absorbing a state
+  // outright needs a real capability gap as well as a won war — otherwise a
+  // near-peer that loses a long war stops existing, which is not how the last
+  // two centuries went and is not a thing a player should have happen to them
+  // for being outfought by a country their own size.
   if (overwhelming && winners.length) {
-    // Anyone who has been pushed off the map, or nearly, stops being a country.
+    // Anyone who has been pushed off the map, or nearly, stops being a country
+    // — as long as whoever is doing it genuinely outclasses *them*. Being
+    // beaten badly is not the same as being erased, and the gap is measured
+    // against the country being absorbed rather than against everybody who
+    // happened to be on its side of the war.
     for (const loserId of losers) {
       if (!isSovereign(game, loserId)) continue;
+      if (powerGap(game, winners, [loserId]) < ERASE_GAP) continue;
       const left = areaOf(game, loserId);
       const started = Math.max(1, startingArea(game, loserId));
       if (hasNoLand(game, loserId) || left / started < 0.12) {
@@ -501,6 +623,16 @@ function settleOccupation(game, war, rng, kind, winners, losers) {
   war.occupied = [];
   return result;
 }
+
+/** How much bigger one side is than the other, structurally. */
+function powerGap(game, winners, losers) {
+  const mine = winners.reduce((sum, id) => sum + livePower(game, id), 0);
+  const theirs = losers.reduce((sum, id) => sum + livePower(game, id), 0);
+  return mine / Math.max(1, theirs);
+}
+
+/** The gap it takes to erase a country rather than merely beat it. */
+const ERASE_GAP = 2.6;
 
 /**
  * Which of the winners is holding most of this loser's ground — and, failing

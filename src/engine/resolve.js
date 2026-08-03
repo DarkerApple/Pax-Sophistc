@@ -15,6 +15,8 @@ import { DEMANDS, send as sendDemand, settleCounter } from './exchanges.js';
 import { blocCall } from './worldwar.js';
 import { reach } from './reach.js';
 import { canRally, rally, rallyAll, ralliableWars } from './rally.js';
+import { ARMS_BY_ID, commitmentCost, defaultMix } from './arsenal.js';
+import { frontName, frontsOf, mountOffensive, suitability } from './fronts.js';
 import {
   TREATY_KINDS,
   abrogate as abrogateTreaty,
@@ -248,6 +250,49 @@ export function resolveAction(game, rng, mods, order, actorId = game.playerId) {
         : 'Nobody answered.');
     } else {
       outcome.notes.push('There is no war to call anybody into.');
+    }
+  }
+
+  // Offensives. The order names a front and a mix — from the planner if the
+  // player opened one, from the operation's own intent if they did not — and
+  // then spends it. What goes in does not come back out.
+  if (action.offensive && succeeded) {
+    const war = order.warId
+      ? game.wars.find((w) => w.id === order.warId && w.active)
+      : activeWarFor(game, actorId);
+    if (!war) {
+      outcome.notes.push('There is no front to attack on.');
+    } else {
+      const side = war.attackers.includes(actorId) ? 'attackers' : 'defenders';
+      const fronts = frontsOf(game, war);
+      // The planner's choice, or the front this operation was written for.
+      const front = (order.plan?.frontId && fronts.find((f) => f.id === order.plan.frontId))
+        || bestFrontFor(game, war, side, action, fronts)
+        || fronts[0];
+      const mix = order.plan?.mix
+        || defaultMix(game, actorId, action.offensive.intent, action.offensive.share);
+
+      const spent = commitmentCost(game, actorId, mix);
+      state.treasury -= spent;
+
+      const result = mountOffensive(game, war, front.id, side, mix, rng, {
+        pressure: (action.offensive.pressure ?? 1) * (tier === 'critical' ? 1.35 : tier === 'partial' ? 0.6 : 1),
+      });
+      outcome.offensive = result;
+      outcome.warId = war.id;
+      if (result) {
+        const gone = Object.entries(result.losses)
+          .map(([armId, n]) => `${n} ${ARMS_BY_ID[armId]?.short || armId}`).join(', ');
+        outcome.notes.push(
+          `${frontName(front)}: ${OFFENSIVE_TIERS[result.tier]} (the line is now ${result.line} of a hundred your way).`,
+        );
+        if (result.suitability < 0.75) {
+          outcome.notes.push(
+            `That mix was worth only ${Math.round(result.suitability * 100)}% of itself on that ground.`,
+          );
+        }
+        if (gone) outcome.notes.push(`Written off: ${gone}.`);
+      }
     }
   }
 
@@ -517,6 +562,32 @@ export function resolveAction(game, rng, mods, order, actorId = game.playerId) {
   }
 
   return outcome;
+}
+
+/** How an offensive went, in the words a briefing would use. */
+const OFFENSIVE_TIERS = {
+  breakthrough: 'the line is broken open',
+  gains: 'ground taken, at a price',
+  grinding: 'a few hundred metres and a great many casualties',
+  repulsed: 'thrown back to the start line',
+};
+
+/**
+ * Which front an operation belongs on when the player has not said.
+ *
+ * Its own `prefers` list first — a mountain operation wants a mountain — and
+ * failing that whichever sector its default mix is worth most on.
+ */
+function bestFrontFor(game, war, side, action, fronts) {
+  const wanted = action.prefers;
+  const mix = defaultMix(game, war[side][0], action.offensive.intent, action.offensive.share);
+  const scored = fronts.map((front) => ({
+    front,
+    score: (wanted?.includes(front.terrainId) ? 2 : 0)
+      + suitability(game, war[side][0], front, mix),
+  }));
+  scored.sort((a, b) => b.score - a.score);
+  return scored[0]?.front || null;
 }
 
 function describeOutcome(game, outcome, action) {

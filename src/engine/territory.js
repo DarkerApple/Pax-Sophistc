@@ -335,6 +335,32 @@ export function startingAreaOf(game, ownerId) {
   return km2 / 1000;
 }
 
+/**
+ * Does this country's territory touch water?
+ *
+ * A land cell with no land cell on one of its four sides is a coast. Used for
+ * force structure (nobody landlocked has a navy) and for drawing the fronts a
+ * war is actually fought on — a country with a coast has a maritime flank
+ * whether it wants one or not.
+ */
+export function hasCoast(game, ownerId) {
+  const mine = cellsOf(game, ownerId);
+  if (!mine.length) return false;
+  const cells = landCells();
+  const slotByIndex = slotLookup();
+  for (const slot of mine) {
+    const [col, row] = cellColRow(cells[slot]);
+    for (const [dc, dr] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const nc = (col + dc + COLS) % COLS;
+      const nr = row + dr;
+      // Off the top or bottom of the grid is the polar ocean, which counts.
+      if (nr < 0 || nr >= ROWS) return true;
+      if (slotByIndex.get(cellIndex(nc, nr)) === undefined) return true;
+    }
+  }
+  return false;
+}
+
 /** Countries whose territory touches this one's. */
 export function neighboursOf(game, ownerId) {
   const mine = new Set(cellsOf(game, ownerId));

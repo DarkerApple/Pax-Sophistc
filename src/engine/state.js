@@ -232,6 +232,11 @@ export function createGame({
     // The closing session, once it convenes.
     congress: null,
     congressEffects: {},
+    // How many consecutive quarters the government has been on the floor. Two
+    // and it falls; one is a warning you can still act on.
+    collapseWatch: 0,
+    // The one emergency administration a state gets before it actually falls.
+    emergencyUsed: 0,
     mandateReviewedAt: 0,
     mandateReviews: 0,
     status: 'active', // active | victory | defeat | collapsed

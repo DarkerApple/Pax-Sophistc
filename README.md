@@ -10,7 +10,7 @@ writes the briefings and judges your freeform orders — and every provider it s
 
 ```bash
 npm start          # http://localhost:5173
-npm test           # 275 engine, orders, treaties, reach, ties, world wars, rallies and translation tests
+npm test           # 292 engine, orders, arsenal, fronts, reach, ties, world wars and translation tests
 ```
 
 There is nothing to install. `npm start` runs a ~60-line static file server from
@@ -40,7 +40,7 @@ turn, the world throws events at you, wars grind forward, and the books get bala
   still allowed, and orders that contradict each other (two alignment changes, two treaty
   calls, two annexations) will not sit on the desk together.
 
-- **382 orders** across eleven tabs — Quick, Economy, Society, Domestic, Military,
+- **404 orders** across eleven tabs — Quick, Economy, Society, Domestic, Military,
   Diplomacy, Alliances, Ties, Intelligence, Technology and the War Room — from `Fiscal
   Stimulus` and `Semiconductor Self-Sufficiency` to `Close the Strait to Their Shipping`,
   `Enter the War on Their Side` and `Mount an Amphibious Landing`. Every shelf can be sorted by relevance, odds, cost, political capital or name.
@@ -200,6 +200,79 @@ give them it, agree for something in return, or refuse in one paragraph. The car
 whether they are in any position to make a refusal cost you something, because that is the
 whole of the decision.
 
+### The armoury, and where the army actually is
+
+`military: 87` is a number on a sheet. It says nothing about whether that
+eighty-seven is armour or artillery, whether it can move at night, or whether
+there is anything left after three quarters of a war — and every operation in
+the War Room cost money and political capital and nothing else, so you could
+mount an amphibious landing every quarter for a decade.
+
+- **Ten arms of service**, with counts you can read: line infantry, armour,
+  artillery and rockets, air wings, air and missile defence, naval groups,
+  long-range missiles, drones, special forces, and logistics and lift. Derived
+  from each country's own sheet and its own description, so Turkey has drones,
+  North Korea has an artillery park, a landlocked country has no fleet, and the
+  United States has a base network that shows up as lift.
+- **Fighting spends it.** Every offensive draws a specific mix out of the depots
+  and what goes in does not all come back. Industry replaces a fraction of what
+  is *missing* each quarter — faster on a war footing, never instantly — so the
+  fourth quarter of a war is fought with what the third one left you.
+- **The Forces panel is the order of battle**: what you hold, what is ready this
+  quarter after readiness, what is standing on a front somewhere, what one
+  formation of it is worth, and what has been written off.
+
+### Where you attack, and with what
+
+A war used to be one number from −100 to +100. That is a tug of war, not a
+campaign: there was no *where*, so there was nothing to choose between, and an
+armoured thrust was worth the same in the Carpathians as on the Polish plain.
+
+- **Every war is two to four named sectors**, drawn from the ground the two
+  sides actually share — the halves of their land frontier, a maritime flank if
+  either has a coast, and an air campaign over all of it. Each has terrain, and
+  each line moves on its own.
+- **The ground decides what an arm is worth there.** Armour is ×1.7 on open
+  country and ×0.35 in the mountains; artillery owns a built-up belt; a navy is
+  worth ×2.6 in the sea lanes and ×0.02 on them. Sending armour into the
+  mountains is not unlucky, it is wrong — and the planner says so before you
+  order it.
+- **The offensive planner** answers all three questions on one screen: pick the
+  sector, pick the operation, and move arms in and out of the commitment while
+  the odds, the suitability of the mix to that ground, the local balance, what
+  you can sustain and the bill all move with you. Five named factors explain the
+  number. What you commit stays on that front until it is withdrawn or
+  destroyed.
+- **Twenty-two new ways to attack**, each with a home: force the passes, take
+  the city, force the river, go round the open flank, exploit the breakthrough,
+  saturate them with drones, fight the counter-battery war, roll back the air
+  defence, cut the roads behind them, strike the command chain, close their sea
+  lanes, put the fleet off their coast, put a corps ashore here.
+- **Your army mans its own line** whether or not you gave an order about it. The
+  garrison takes a share of the arsenal; what is left is what an offensive has
+  to work with.
+
+### Land: worth taking, hard to lose
+
+- **Ground moves through a sector that has broken open, not through an average.**
+  A front that is genuinely through takes up to three times the territory a
+  grinding advance does, and can give up most of what is behind it in a single
+  quarter. Choosing the right front and sending the right arms is what pays.
+- **Occupied ground pays a dividend** once it has been held long enough to be
+  administered rather than merely occupied. Taking territory is supposed to be
+  worth doing.
+- **A country cannot be erased by somebody its own size.** Absorbing a state
+  outright needs a real structural power gap, and below that gap the last tenth
+  of a homeland is a hard floor: you can be beaten to a rump and you cannot be
+  ground out of existence. A country also defends its heartland harder the less
+  of it is left.
+- **And a government does not fall the first quarter it wobbles.** A state on
+  the floor suspends normal government — an emergency administration, once —
+  and survives, which is the quarter you still have to act in. Only a state
+  still on the floor the quarter after that actually falls. Unrest reverts
+  toward a country's own structural level proportionally rather than a flat
+  point a quarter, so nowhere ratchets itself to a hundred and stays there.
+
 ### Wars that make sense on a map
 
 An army that cannot get somewhere does not fight there, and does not end up administering
@@ -339,6 +412,9 @@ watching. The centre column carries a panel that shows it, in three faces:
   what each of them supplies, who depends on *you*, which way the leverage runs in every
   one of those relationships, what is currently shut and what that is costing you in
   growth, and the propositions waiting on somebody's desk for an answer.
+- **Forces** — your order of battle, arm by arm, and every front of every war
+  you are in with its terrain, its line, what each side has standing on it and
+  what it has cost so far.
 - **Rankings** — ten league tables (power, economy, per head, army, land, people,
   influence, technology, stability, warheads) with your own position always visible, even
   when you are fiftieth.
@@ -662,7 +738,7 @@ without being documented and cannot be documented without existing.
 
 The whole interface ships in **English and Korean**, switchable from **the header on the
 setup screen and the top bar in game** — one click, no menus — and remembered between runs. That covers the chrome, all 56 country names and one-line briefs,
-all 382 order names and descriptions, the world modes, difficulty tiers, themes, help,
+all 404 order names and descriptions, the world modes, difficulty tiers, themes, help,
 events, decisions, escalation and war text — and the locally generated quarterly briefing,
 which is composed from translated fragments rather than translated after the fact.
 
@@ -771,6 +847,9 @@ src/
     dependency.js     the second map: who needs whom, and what closing it costs
     worldwar.js       bloc calls, wars that merge, and the war that goes general
     rally.js          asking capitals that owe you nothing to come anyway
+    arsenal.js        ten arms of service, spent by fighting and slowly replaced
+    fronts.js         the sectors a war is fought on, and what the ground does
+    offensives.js     twenty-two ways to attack, all of them costing materiel
     exchanges.js      demands and offers other governments answer
     factions.js       the four creditors of political capital
     nemesis.js        the rivalry, and the file behind it
@@ -823,9 +902,9 @@ src/
     setup.js          new-game screen
     game.js           command screen: dashboard, inspector, feed, planner
     dom.js, store.js  helpers and persistence
-tests/                engine, orders, treaties, reach, ties, world wars, rallies,
-                      politics, endgame, desk, territory, coalitions, worldview,
-                      AI-boundary, world and translation tests
+tests/                engine, orders, arsenal, fronts, treaties, reach, ties,
+                      world wars, rallies, politics, endgame, desk, territory,
+                      coalitions, worldview, AI-boundary, world and translation tests
 ```
 
 The simulation (`src/engine/`, `src/data/`) has no DOM dependency and runs under plain Node,
